@@ -1,9 +1,29 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import './load-env.ts';
 import { getDb } from './db/database.ts';
 import { WhatsAppConnection } from './whatsapp/connection.ts';
 import { createHonoServer } from './api/server.ts';
 import { log } from './logger.ts';
 import type { BroadcastEvent } from './types.ts';
+
+const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+if (!process.env.PUBLIC_DIR) {
+  const publicDir = resolve(projectDir, 'public');
+  process.env.PUBLIC_DIR = publicDir;
+
+  log('BOOT', 'Building dashboard frontend');
+  execFileSync('npm', ['run', 'build'], {
+    cwd: projectDir,
+    stdio: 'inherit',
+  });
+
+  if (!existsSync(join(publicDir, 'index.html'))) {
+    throw new Error(`Frontend build completed without creating ${join(publicDir, 'index.html')}`);
+  }
+}
 
 log('BOOT', 'Starting WhatsRecall (Modular TypeScript Edition)');
 log('BOOT', `Node env: ${process.env.NODE_ENV || 'development'}`);

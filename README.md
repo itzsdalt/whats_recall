@@ -137,6 +137,8 @@ MFA helps when someone learns only `AUTH_PASSWORD`; it cannot protect an install
 npm start
 ```
 
+Startup builds the dashboard frontend automatically before starting the server, so deployed frontend changes are included. The first start may take longer while frontend dependencies are installed and assets are built.
+
 *On first run, follow the terminal instructions to pair your account via QR Code or Pairing Code. Dashboard available at `http://localhost:3001/whats/`.*
  
 ---
