@@ -1,4 +1,4 @@
-import { log } from "../logger.js";
+import { log } from "../logger.ts";
 import { randomInt } from "crypto";
 
 /**

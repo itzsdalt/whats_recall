@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import { jidNormalizedUser } from "@whiskeysockets/baileys";
-import { log } from "../logger.js";
-import { getDataDir, getDb } from "../db/database.js";
+import { log } from "../logger.ts";
+import { getDataDir, getDb } from "../db/database.ts";
 import { safeMerge, extractJidId } from "./utils.ts";
 
 const getCacheFile = () =>

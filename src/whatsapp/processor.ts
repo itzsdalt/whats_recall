@@ -6,8 +6,8 @@ import {
     proto,
 } from "@whiskeysockets/baileys";
 import { aesDecryptGCM, hkdf, hmacSign } from "@whiskeysockets/baileys/lib/Utils/crypto.js";
-import { log } from "../logger.js";
-import { getDb, getMediaDir } from "../db/database.js";
+import { log } from "../logger.ts";
+import { getDb, getMediaDir } from "../db/database.ts";
 import { syncService } from "./sync.ts";
 import { downloadMedia, downloadProfilePic } from "./media.ts";
 import { join } from "path";
