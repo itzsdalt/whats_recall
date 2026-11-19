@@ -8,7 +8,7 @@ const tempDir = mkdtempSync(join(tmpdir(), "whatsapp-middleware-test-"));
 process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 
-import { expect, test, describe, mock, beforeEach, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, beforeAll, afterAll, vi } from "vitest";
 
 const { getDb, dbInstances } = await import("../src/db/database.ts");
 
@@ -30,7 +30,7 @@ describe("authMiddleware", () => {
 
   beforeEach(async () => {
     await db.clearAllData();
-    mockNext = mock(() => Promise.resolve());
+    mockNext = vi.fn(() => Promise.resolve());
     
     // Create a mock headers object that getCookie can use
     const headersMap = new Map<string, string>();
@@ -38,16 +38,16 @@ describe("authMiddleware", () => {
     mockContext = {
       req: {
         path: "/api/chats",
-        header: mock((name: string) => headersMap.get(name.toLowerCase())),
+        header: vi.fn((name: string) => headersMap.get(name.toLowerCase())),
         raw: {
           headers: {
-            get: mock((name: string) => headersMap.get(name.toLowerCase()))
+            get: vi.fn((name: string) => headersMap.get(name.toLowerCase()))
           }
         }
       },
-      json: mock((data: any, status: number) => ({ data, status })),
-      get: mock(() => undefined),
-      set: mock(() => undefined),
+      json: vi.fn((data: any, status: number) => ({ data, status })),
+      get: vi.fn(() => undefined),
+      set: vi.fn(() => undefined),
       _headersMap: headersMap // helper for tests
     };
   });

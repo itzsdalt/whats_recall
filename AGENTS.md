@@ -5,7 +5,7 @@ This document is specifically designed for AI agents (Claude, Gemini, etc.) to u
 ---
 
 ## 🏛️ Core Architecture & Tech Stack
-- **Runtime**: [Bun](https://bun.sh) (High-performance, built-in TS support).
+- **Runtime**: Node.js (TypeScript execution via `tsx`; SQLite via `node:sqlite`).
 - **Backend**: [Hono](https://hono.dev/) (HTTP + WebSockets).
 - **Frontend**: [SolidJS](https://www.solidjs.com/) (Fine-grained reactivity, no Virtual DOM).
 - **Persistence**: SQLite with **Write-Ahead Logging (WAL)** enabled for concurrency.
@@ -30,8 +30,8 @@ The UI follows a **Softened Nothing Design System**, adhering exactly to the **N
 ## 🚦 Operational Protocols
 
 ### 🧪 Testing Environment
-- **Command**: Use `bun t` for quiet diagnostic mode (shows failures only).
-- **Command**: Use `bun test` for full verbose output.
+- **Command**: Use `npm run t` for compact diagnostic mode.
+- **Command**: Use `npm test` for the full test suite.
 - **Standard**: All tests must set `process.env.NODE_ENV = "test"` as the very first line to ensure database isolation.
 - **Debugging**: If logs are needed during testing, set `process.env.VERBOSE = "true"`.
 
@@ -42,7 +42,7 @@ The UI follows a **Softened Nothing Design System**, adhering exactly to the **N
 ### 🪵 Standardized Logging
 - **Utility**: Always use the custom logger located at `src/logger.ts`.
 - **Categories**: `HTTP`, `WA`, `BOOT`, `AUTH`, `WS`, `SERVER`, `DB`, `API`, `CONN`, `PROCESSOR`, `SYNC`.
-- **Silence**: Logging is automatically suppressed in standard `bun t` test runs unless `VERBOSE=true`.
+- **Silence**: Logging is automatically suppressed in standard test runs unless `VERBOSE=true`.
 
 ---
 

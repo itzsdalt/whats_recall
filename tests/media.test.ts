@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test";
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, mock } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -10,16 +10,20 @@ process.env.DB_PATH = join(tempDir, "messages.db");
 process.env.MEDIA_DIR = join(tempDir, "media");
 
 // Mocking Baileys
-mock.module("@whiskeysockets/baileys", () => ({
+vi.mock("@whiskeysockets/baileys", () => ({
     downloadMediaMessage: async () => Buffer.from("fake media content"),
 }));
 
 // Mocking fetch for profile pic
 // Use any to avoid missing fetch properties like 'preconnect' in Bun types
-(global as any).fetch = async (url: string) => ({
-    ok: true,
-    arrayBuffer: async () => Buffer.from("fake profile pic").buffer
-});
+(global as any).fetch = async (_url: string) => {
+    const image = Buffer.from("fake profile pic");
+    const exactBuffer = image.buffer.slice(image.byteOffset, image.byteOffset + image.byteLength);
+    return {
+        ok: true,
+        arrayBuffer: async () => exactBuffer
+    };
+};
 
 import { getDb } from "../src/db/database.ts";
 import { downloadMedia, downloadProfilePic } from "../src/whatsapp/media.ts";
@@ -88,7 +92,7 @@ describe("Media Utils", () => {
         const result = await downloadMedia(message as any, "image");
         expect(result).not.toBeNull();
         expect(result?.sha256hex).toBe(Buffer.from("fake-sha256").toString('hex'));
-        expect(result?.path).toStartWith("images/");
+        expect(result?.path).toMatch(/^images\//);
         expect(existsSync(join(process.env.MEDIA_DIR!, result?.path!))).toBe(true);
     });
 
@@ -108,7 +112,7 @@ describe("Media Utils", () => {
         const result = await downloadMedia(message as any, "video");
         expect(result).not.toBeNull();
         expect(result?.sha256hex).toBe(Buffer.from("video-sha256").toString('hex'));
-        expect(result?.path).toStartWith("videos/");
+        expect(result?.path).toMatch(/^videos\//);
     });
 
     test("downloadMedia should return null if no media found", async () => {

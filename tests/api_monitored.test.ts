@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test";
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";

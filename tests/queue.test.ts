@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test";
-import { expect, test, describe } from "bun:test";
+import { expect, test, describe } from "vitest";
 import { actionsQueue } from "../src/whatsapp/queue.ts";
 import { readFile } from "fs/promises";
 import { join } from "path";

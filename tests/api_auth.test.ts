@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test"; // Must be FIRST
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -13,6 +13,7 @@ process.env.AUTH_PASSWORD = "test-password-123";
 import { getDb, dbInstances } from "../src/db/database.ts";
 import authApi from "../src/api/auth.ts";
 import { apiRateLimits } from "../src/api/utils.ts";
+import { generateTotpCode } from "../src/api/totp.ts";
 
 import { Hono } from 'hono';
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -40,7 +41,12 @@ describe("API /auth", () => {
 
     beforeEach(async () => {
         await db.clearAllData();
+        db.raw.query("DELETE FROM auth_totp").run();
         apiRateLimits.clear();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     afterAll(() => {
@@ -68,19 +74,83 @@ describe("API /auth", () => {
         expect(json.error).toBe("Invalid password");
     });
 
-    test("POST /login should succeed with valid password", async () => {
-        const res = await auth.request("/login", {
+    test("POST /login requires TOTP enrollment and then a valid one-time code", async () => {
+        vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+        db.createSession("legacy-session", "old-fp", new Date(Date.now() + 60_000).toISOString());
+        const setupRes = await auth.request("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password: "test-password-123", fingerprint: "fp-123" })
         });
-        expect(res.status).toBe(200);
-        const json = await res.json();
-        expect(json.success).toBe(true);
-        expect(json.token).toBeDefined();
+        expect(setupRes.status).toBe(200);
+        const setup = await setupRes.json();
+        expect(setup.requiresTotpSetup).toBe(true);
+        expect(setup.secret).toMatch(/^[A-Z2-7]{32}$/);
+        expect(setup.otpAuthUrl).toContain("otpauth://totp/");
+        expect(setup.token).toBeUndefined();
+        expect(db.raw.query("SELECT * FROM sessions WHERE token = ?").get("legacy-session")).toBeNull();
+        expect(db.raw.query("SELECT COUNT(*) AS count FROM sessions").get()).toMatchObject({ count: 0 });
 
-        // Verify session in DB
-        const session = db.raw.query("SELECT * FROM sessions WHERE token = ?").get(json.token) as any;
+        const enableRes = await auth.request("/totp/enable", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                password: "test-password-123",
+                fingerprint: "fp-123",
+                code: generateTotpCode(setup.secret, Date.now())
+            })
+        });
+        expect(enableRes.status).toBe(200);
+        const enabled = await enableRes.json();
+        expect(enabled.success).toBe(true);
+        expect(enabled.token).toBeDefined();
+
+        const challengeRes = await auth.request("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: "test-password-123", fingerprint: "fp-123" })
+        });
+        expect(challengeRes.status).toBe(200);
+        expect((await challengeRes.json()).requiresTotp).toBe(true);
+
+        const invalidCodeRes = await auth.request("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                password: "test-password-123",
+                fingerprint: "fp-123",
+                code: "ABC"
+            })
+        });
+        expect(invalidCodeRes.status).toBe(401);
+
+        const setupCode = generateTotpCode(setup.secret, Date.now());
+        const replayRes = await auth.request("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                password: "test-password-123",
+                fingerprint: "fp-123",
+                code: setupCode
+            })
+        });
+        expect(replayRes.status).toBe(401);
+
+        const loginRes = await auth.request("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                password: "test-password-123",
+                fingerprint: "fp-123",
+                code: generateTotpCode(setup.secret, Date.now() + 30_000)
+            })
+        });
+        expect(loginRes.status).toBe(200);
+        const login = await loginRes.json();
+        expect(login.success).toBe(true);
+        expect(login.token).toBeDefined();
+
+        const session = db.raw.query("SELECT * FROM sessions WHERE token = ?").get(login.token) as any;
         expect(session).toBeDefined();
         expect(session.fingerprint).toBe("fp-123");
     });

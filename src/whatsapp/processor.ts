@@ -11,6 +11,7 @@ import { getDb, getMediaDir } from "../db/database.js";
 import { syncService } from "./sync.ts";
 import { downloadMedia, downloadProfilePic } from "./media.ts";
 import { join } from "path";
+import { existsSync } from "fs";
 import { BroadcastFn, WhatsAppMessage } from "../types.ts";
 import {
     getChatNameAsync,
@@ -860,7 +861,7 @@ export class MessageProcessor {
 
             if (msg.has_media && msg.media_path) {
                 const fullPath = join(getMediaDir(), msg.media_path);
-                if (await Bun.file(fullPath).exists()) {
+                if (existsSync(fullPath)) {
                     const content: any = { caption: text };
                     if (msg.type === "image") content.image = { url: fullPath };
                     else if (msg.type === "video")
@@ -917,7 +918,7 @@ export class MessageProcessor {
 
             if (msg.has_media && msg.media_path) {
                 const fullPath = join(getMediaDir(), msg.media_path);
-                if (await Bun.file(fullPath).exists()) {
+                if (existsSync(fullPath)) {
                     const mediaType = msg.type;
                     const content: any = { caption: text };
 

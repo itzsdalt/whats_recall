@@ -1,3 +1,4 @@
+process.env.NODE_ENV = "test";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -5,9 +6,7 @@ import { tmpdir } from "os";
 const tempDir = mkdtempSync(join(tmpdir(), "whatsapp-db-test-"));
 process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
-process.env.NODE_ENV = "test";
-
-import { expect, test, describe, afterAll, beforeAll } from "bun:test";
+import { expect, test, describe, afterAll, beforeAll } from "vitest";
 
 const testMediaDir = join(tempDir, "media");
 if (!existsSync(testMediaDir)) mkdirSync(testMediaDir, { recursive: true });

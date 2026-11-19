@@ -1,4 +1,5 @@
-import { expect, test, describe, afterEach, mock, beforeEach } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, afterEach, beforeEach } from "vitest";
 
 describe("Rate Limiting", () => {
     let apiRateLimits: Map<string, any>;

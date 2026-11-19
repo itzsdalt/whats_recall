@@ -6,8 +6,12 @@ import { createError } from 'evlog';
 
 export async function authMiddleware(c: Context, next: Next) {
   const db = getDb();
-  const path = c.req.path;
-  if (path === '/api/auth/login' || path === '/api/auth/verify') {
+  const path = c.req.path.replace(/^\/whats(?=\/|$)/, '');
+  if (
+    path === '/api/auth/login' ||
+    path === '/api/auth/verify' ||
+    path === '/api/auth/totp/enable'
+  ) {
     return await next();
   }
 

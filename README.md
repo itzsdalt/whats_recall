@@ -6,7 +6,7 @@
 ### SECURE_MESSAGE_ARCHIVAL_SYSTEM
 
 [![Version](https://img.shields.io/badge/version-1.0-white?style=flat-square)](#)
-[![Runtime](https://img.shields.io/badge/Runtime-Bun-000?logo=bun&logoColor=white&style=flat-square)](https://bun.sh)
+[![Runtime](https://img.shields.io/badge/Runtime-Node.js-339933?logo=node.js&logoColor=white&style=flat-square)](https://nodejs.org/)
 [![Frontend](https://img.shields.io/badge/Frontend-SolidJS-2c4f7c?logo=solid&logoColor=fff&style=flat-square)](https://www.solidjs.com/)
 [![Backend](https://img.shields.io/badge/Backend-Hono-E36002?logo=hono&logoColor=white&style=flat-square)](https://hono.dev/)
 [![Design](https://img.shields.io/badge/Design-Nothing-D71921?style=flat-square)](#design-system)
@@ -68,7 +68,7 @@ A privacy-first archival system that captures deleted messages, saves view-once 
 
 | LAYER | TECHNOLOGY | RATIONALE |
 | :--- | :--- | :--- |
-| **RUNTIME** | [Bun](https://bun.sh) | High-performance JS runtime with native TS support. |
+| **RUNTIME** | [Node.js](https://nodejs.org/) 22.13+ | JavaScript runtime with built-in SQLite support. |
 | **BACKEND** | [Hono](https://hono.dev/) | Ultra-fast web framework with standard-compliant fetch API. |
 | **FRONTEND** | [SolidJS](https://www.solidjs.com/) | Fine-grained reactivity and minimal UI overhead. |
 | **DATABASE** | SQLite (WAL) | Local, file-based persistence with Write-Ahead Logging for concurrency. |
@@ -96,8 +96,8 @@ git clone https://github.com/JKc66/whats_recall.git
 cd whats_recall
 
 # Install dependencies and build frontend
-bun install
-bun run build
+npm install
+npm run build
 ```
 
 ### 2_CONFIGURATION
@@ -113,16 +113,28 @@ cp .env.example .env
 | :--- | :--- | :--- |
 | `AUTH_PASSWORD` | Primary dashboard access password. | `required` |
 | `TRUSTED_PROXIES` | Comma-separated IPs of trusted reverse proxies. | `none` |
+
 | `TRUST_PROXY` | Set to `true` to enable proxy header trust. | `false` |
 | `DATA_DIR` | Path to persistent storage. | `./data` |
 | `MEDIA_DIR` | Path to media archival storage. | `./data/media` |
 | `MAX_MEDIA_SIZE` | Override default media download limit (bytes). | `100MB (DB)` |
 
+### 4_AUTHENTICATOR_MFA
+
+The first successful password sign-in requires enrollment with a TOTP-compatible authenticator app. After enrollment, sign-in requires both the password and the current six-digit authenticator code. The authenticator seed is stored in the local SQLite database, and existing sessions are invalidated when MFA is initialized.
+
+If the authenticator is lost, stop the server, back up the database, and remove the `auth_totp` row from the configured SQLite database to restart enrollment. For the default database path:
+
+```bash
+sqlite3 data/messages.db "DELETE FROM auth_totp; DELETE FROM sessions;"
+```
+
+MFA helps when someone learns only `AUTH_PASSWORD`; it cannot protect an installation from an administrator who can access the server process, application files, or database.
 
 ### 4_EXECUTION
 ```bash
 # Start the production server
-bun start
+npm start
 ```
 
 *On first run, follow the terminal instructions to pair your account via QR Code or Pairing Code. Dashboard available at `http://localhost:3001/whats/`.*
@@ -201,12 +213,12 @@ pm2 stop whats-recall
 
 | COMMAND | DESCRIPTION |
 | :--- | :--- |
-| `bun dev` | Start development server with hot-reloading. |
+| `npm run dev` | Start the backend with hot-reloading. |
 | `pm2 restart whats-recall` | Restart the production process. |
-| `bun fix` | Automatically rewrite arbitrary CSS to match design system. |
-| `bun lint` | Project-wide logic and style check. |
-| `bun t` | Run tests in quiet diagnostic mode. |
-| `bun test` | Full verbose test suite execution. |
+| `npm run fix` | Automatically rewrite arbitrary CSS to match design system. |
+| `npm run lint` | Project-wide logic and style check. |
+| `npm run t` | Run tests with compact output. |
+| `npm test` | Run the full test suite. |
 
 ---
 

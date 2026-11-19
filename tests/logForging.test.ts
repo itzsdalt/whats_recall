@@ -1,4 +1,5 @@
-import { expect, test, describe, spyOn } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, vi } from "vitest";
 // Setup for log verification
 process.env.VERBOSE = "true";
 import { log } from "../src/logger.ts";
@@ -6,7 +7,7 @@ import { log } from "../src/logger.ts";
 describe("Log Forging Mitigation", () => {
     test("should prevent log forging by sanitizing newline characters", () => {
         process.env.VERBOSE = "true";
-        const consoleSpy = spyOn(console, "log");
+        const consoleSpy = vi.spyOn(console, "log");
 
         const maliciousPath = "/api/v1/user\n[2025-01-01 00:00:00] [AUTH] Login success from 1.2.3.4";
         const method = "GET";

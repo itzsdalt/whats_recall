@@ -3,28 +3,37 @@
   "version": "1.0",
   "type": "module",
   "main": "src/index.ts",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
-    "start": "bun src/index.ts",
-    "dev": "bun --watch src/index.ts",
-    "build:web": "cd web && bun install && bun run build",
-    "build": "bun build:web",
-    "lint": "bun x eslint . && cd web && bun run lint",
-    "fix": "bun x eslint . --fix && cd web && bun run fix",
+    "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "build:web": "npm install --prefix web && npm run build --prefix web",
+    "build": "npm run build:web",
+    "lint": "eslint . && npm run lint --prefix web",
+    "fix": "eslint . --fix && npm run fix --prefix web",
     "typecheck": "tsc --noEmit",
-    "t": "bun test --only-failures"
+    "test": "vitest run",
+    "t": "vitest run --reporter=dot"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.6",
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "evlog": "^2.11.0",
     "hono": "^4.7.0",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/bun": "^1.3.11",
+    "@types/node": "^24.10.0",
+    "@types/ws": "^8.18.1",
     "eslint": "^10.1.0",
     "globals": "^17.4.0",
+    "tsx": "^4.20.6",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.0"
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^4.0.10"
   }
 }

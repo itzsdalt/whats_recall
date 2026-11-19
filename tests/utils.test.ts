@@ -1,4 +1,5 @@
-import { expect, test, describe, beforeEach } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, beforeEach } from "vitest";
 import { extractJidId, getChatName, safeMerge, getChatNameAsync } from "../src/whatsapp/utils.ts";
 import { syncService } from "../src/whatsapp/sync.ts";
 

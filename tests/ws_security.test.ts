@@ -1,38 +1,38 @@
-import { expect, test } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test } from "vitest";
 import { getDb } from "../src/db/database";
 import { createHonoServer } from "../src/api/server";
+import { WebSocket } from "ws";
 
 test("WebSocket session invalidation", async () => {
     // Setup server
     const mockClient: any = { isReady: true, isAuthenticated: true };
+    process.env.AUTH_PASSWORD = "secure_password_123";
+    process.env.WEB_PORT = "0";
     const { start, broadcast } = createHonoServer(mockClient);
 
-    // We need AUTH_PASSWORD set for server to start
-    process.env.AUTH_PASSWORD = "secure_password_123";
-    // Use dynamic port to avoid EADDRINUSE
-    process.env.WEB_PORT = "0";
-
-    const { bunServer } = start();
+    const { nodeServer } = start();
 
     const db = getDb();
     db.createSession("test_token", "fp1", new Date(Date.now() + 100000).toISOString());
 
     // Connect WS
-    const wsUrl = new URL(bunServer.url);
-    wsUrl.protocol = "ws:";
-    wsUrl.pathname = "/ws";
-
-    const ws = new (WebSocket as any)(wsUrl.toString(), {
+    const address = nodeServer.address();
+    if (!address || typeof address === 'string') throw new Error('HTTP server did not bind to a TCP port');
+    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, {
         headers: { "X-Auth-Token": "test_token", "X-Fingerprint": "fp1" }
     });
 
-    await new Promise(resolve => ws.onopen = resolve);
+    await new Promise<void>((resolve, reject) => {
+        ws.once('open', resolve);
+        ws.once('error', reject);
+    });
 
     let receivedData: any = null;
-    ws.onmessage = (event: any) => {
-        const msg = JSON.parse(event.data as string);
+    ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
         if (msg.event === "new_message") receivedData = msg.data;
-    };
+    });
 
     broadcast("new_message", "hello");
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -49,5 +49,7 @@ test("WebSocket session invalidation", async () => {
     expect(receivedData).toBeNull(); // Should not receive data, should be disconnected
 
     ws.close();
-    bunServer.stop(true);
+    await new Promise<void>((resolve, reject) => {
+        nodeServer.close((error) => error ? reject(error) : resolve());
+    });
 });

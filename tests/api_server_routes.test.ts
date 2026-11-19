@@ -1,6 +1,6 @@
 process.env.NODE_ENV = "test";
 process.env.AUTH_PASSWORD = "testpassword";
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -13,6 +13,7 @@ process.env.PUBLIC_DIR = join(tempDir, "public");
 
 import { getDb } from "../src/db/database.ts";
 import { createHonoServer } from "../src/api/server.ts";
+import { generateTotpCode } from "../src/api/totp.ts";
 
 describe("API Server Routes", () => {
     let db: any;
@@ -118,5 +119,44 @@ describe("API Server Routes", () => {
         expect(await res.text()).toBe("<html><body>SPA</body></html>");
         
         rmSync(indexPath);
+    });
+
+    test("subpath serves built assets", async () => {
+        const assetsDir = join(process.env.PUBLIC_DIR!, "assets");
+        mkdirSync(assetsDir, { recursive: true });
+        writeFileSync(join(assetsDir, "app.js"), "window.appLoaded = true;");
+        writeFileSync(join(process.env.PUBLIC_DIR!, "index.html"), '<script src="/whats/assets/app.js"></script>');
+
+        const page = await app.request("/whats/");
+        expect(page.status).toBe(200);
+        expect(await page.text()).toContain("/whats/assets/app.js");
+
+        const res = await app.request("/whats/assets/app.js");
+        expect(res.status).toBe(200);
+        expect(res.headers.get("content-type")).toContain("javascript");
+        expect(await res.text()).toContain("appLoaded");
+    });
+
+    test("subpath auth routes support TOTP enrollment", async () => {
+        const loginRes = await app.request("/whats/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: "testpassword", fingerprint: "test-fp" })
+        });
+        expect(loginRes.status).toBe(200);
+        const setup = await loginRes.json();
+        expect(setup.requiresTotpSetup).toBe(true);
+
+        const enableRes = await app.request("/whats/api/auth/totp/enable", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                password: "testpassword",
+                fingerprint: "test-fp",
+                code: generateTotpCode(setup.secret)
+            })
+        });
+        expect(enableRes.status).toBe(200);
+        expect((await enableRes.json()).success).toBe(true);
     });
 });

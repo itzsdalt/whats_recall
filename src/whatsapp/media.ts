@@ -2,6 +2,7 @@ import { downloadMediaMessage, WAMessage, downloadContentFromMessage } from '@wh
 import { writeFile } from 'fs/promises';
 import { mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
+import { Worker } from 'node:worker_threads';
 import { getDb, getDataDir } from '../db/database.ts';
 import { log } from '../logger.ts';
 
@@ -21,19 +22,28 @@ const SUBDIR_MAP: Record<string, string> = {
 };
 
 let hashWorker: Worker | null = null;
-const hashPending = new Map<string, (hash: string) => void>();
+const hashPending = new Map<string, { resolve: (hash: string) => void; reject: (error: Error) => void }>();
 
 function getHashWorker() {
   if (!hashWorker) {
-    hashWorker = new Worker(new URL("../workers/media-worker.ts", import.meta.url).href);
-    hashWorker.onmessage = (event) => {
-      const { id, hash, error: _error } = event.data;
-      const resolve = hashPending.get(id);
-      if (resolve) {
-        resolve(hash || null);
+    hashWorker = new Worker(new URL("../workers/media-worker.ts", import.meta.url), {
+      execArgv: ['--import', 'tsx'],
+    });
+    hashWorker.unref();
+    hashWorker.on('message', ({ id, hash, error }: { id: string; hash?: string; error?: string }) => {
+      const pending = hashPending.get(id);
+      if (pending) {
         hashPending.delete(id);
+        if (error) pending.reject(new Error(error));
+        else if (hash) pending.resolve(hash);
+        else pending.reject(new Error('Media hash worker returned no hash'));
       }
-    };
+    });
+    hashWorker.on('error', (error) => {
+      for (const pending of hashPending.values()) pending.reject(error);
+      hashPending.clear();
+      hashWorker = null;
+    });
   }
   return hashWorker;
 }
@@ -41,14 +51,19 @@ function getHashWorker() {
 async function computeHash(buffer: Buffer): Promise<string> {
   const id = crypto.randomUUID();
   const worker = getHashWorker();
-  return new Promise((resolve) => {
-    hashPending.set(id, resolve);
-    worker.postMessage({ 
-      id, 
-      buffer: buffer.buffer, 
-      byteOffset: buffer.byteOffset, 
-      byteLength: buffer.byteLength 
-    });
+  return new Promise((resolve, reject) => {
+    hashPending.set(id, { resolve, reject });
+    try {
+      worker.postMessage({
+        id,
+        buffer: buffer.buffer,
+        byteOffset: buffer.byteOffset,
+        byteLength: buffer.byteLength
+      });
+    } catch (error) {
+      hashPending.delete(id);
+      reject(error);
+    }
   });
 }
 

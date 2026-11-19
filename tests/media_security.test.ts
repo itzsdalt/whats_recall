@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test } from "vitest";
 import { readFile } from "fs/promises";
 import { join } from "path";
 

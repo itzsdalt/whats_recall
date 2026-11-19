@@ -1,4 +1,5 @@
-import { expect, test, describe } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe } from "vitest";
 import { safeMerge } from "../src/whatsapp/utils.ts";
 
 describe("safeMerge", () => {

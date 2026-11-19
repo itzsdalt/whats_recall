@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
-import { serveStatic } from 'hono/bun';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
+import { getMimeType } from 'hono/utils/mime';
 import { log } from '../logger.ts';
 import auth from './auth.ts';
 import { authMiddleware } from './middleware.ts';
@@ -11,6 +13,9 @@ import monitored from './monitored.ts';
 import settings from './settings.ts';
 import whatsappRouter from './whatsapp.ts';
 import { join } from 'path';
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { WebSocket, WebSocketServer } from 'ws';
 import { getMediaDir, getDb } from '../db/database.ts';
 import { WhatsAppConnection } from '../whatsapp/connection.ts';
 import { BroadcastEvent } from '../types.ts';
@@ -74,7 +79,15 @@ export function createHonoServer(client: WhatsAppConnection) {
     maxAge: 600,
   }));
 
-  const wsClients = new Set<any>();
+  const wsClients = new Set<WebSocket>();
+  const wsSessions = new WeakMap<WebSocket, { token?: string; fingerprint?: string }>();
+  const websocketServer = new WebSocketServer({ noServer: true });
+
+  websocketServer.on('connection', (ws) => {
+    wsClients.add(ws);
+    ws.on('close', () => wsClients.delete(ws));
+    ws.on('error', () => wsClients.delete(ws));
+  });
 
 
   // Periodic cleanup
@@ -106,10 +119,10 @@ export function createHonoServer(client: WhatsAppConnection) {
       });
     }
 
-    const file = Bun.file(filepath);
-    if (!(await file.exists())) return c.notFound();
-    return c.body(await file.arrayBuffer(), 200, {
-      'Content-Type': file.type,
+    if (!existsSync(filepath)) return c.notFound();
+    const file = await readFile(filepath);
+    return c.body(new Uint8Array(file), 200, {
+      'Content-Type': getMimeType(filepath) || 'application/octet-stream',
       'Cache-Control': 'public, max-age=86400'
     });
   });
@@ -181,6 +194,7 @@ export function createHonoServer(client: WhatsAppConnection) {
   });
 
   app.route('/api', api);
+  app.route('/whats/api', api);
 
   // Global Error Handler
   app.onError((error, c) => {
@@ -206,7 +220,12 @@ export function createHonoServer(client: WhatsAppConnection) {
   });
 
   // Static files middleware first
-  app.use('/*', serveStatic({ root: './public' }));
+  const publicDir = process.env.PUBLIC_DIR || './public';
+  app.use('/whats/*', serveStatic({
+    root: publicDir,
+    rewriteRequestPath: (path) => path.replace(/^\/whats(?=\/|$)/, '') || '/'
+  }));
+  app.use('/*', serveStatic({ root: publicDir }));
 
   // SPA fallback - catch any remaining routes and serve index.html
   app.get('*', async (c, next) => {
@@ -217,11 +236,10 @@ export function createHonoServer(client: WhatsAppConnection) {
     // Avoid catching assets that might be missing (to avoid recursion or MIME errors)
     if (path.includes('.') && !path.endsWith('.html')) return next();
 
-    const publicDir = process.env.PUBLIC_DIR || './public';
-    const indexFile = Bun.file(join(publicDir, 'index.html'));
-    
-    if (await indexFile.exists()) {
-      return c.html(await indexFile.text());
+    const indexPath = join(publicDir, 'index.html');
+
+    if (existsSync(indexPath)) {
+      return c.html(await readFile(indexPath, 'utf8'));
     }
     return c.text('Not Found', 404);
   });
@@ -231,14 +249,14 @@ export function createHonoServer(client: WhatsAppConnection) {
     const payload = JSON.stringify({ event, data });
     for (const ws of wsClients) {
       try {
-        const { token, fingerprint } = ws.data || {};
+      const { token, fingerprint } = wsSessions.get(ws) || {};
         const { authenticated } = verifySession(db, token, fingerprint);
         if (!authenticated) {
           ws.close(1008, 'Unauthorized');
           wsClients.delete(ws);
           continue;
         }
-        (ws as any).send(payload);
+      if (ws.readyState === WebSocket.OPEN) ws.send(payload);
       } catch { /* handled by close */ }
     }
   };
@@ -246,35 +264,35 @@ export function createHonoServer(client: WhatsAppConnection) {
   const start = () => {
     const port = parseInt(process.env.WEB_PORT || '3000', 10);
 
-    const bunServer = Bun.serve({
+    const nodeServer = serve({
+      fetch: app.fetch,
       port,
-      fetch: async (req: Request, server: any) => {
-        const url = new URL(req.url);
-        if (url.pathname === '/ws') {
-          const db = getDb();
-          const cookieHeader = req.headers.get('Cookie') || '';
-          const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1] || req.headers.get('X-Auth-Token') || undefined;
-          const fingerprint = req.headers.get('X-Fingerprint') || cookieHeader.match(/auth_fp=([^;]+)/)?.[1] || undefined;
+    });
 
-          const { authenticated, error } = verifySession(db, token, fingerprint);
-          if (!authenticated) return new Response(error, { status: 401 });
-
-          const upgraded = server.upgrade(req, {
-            data: { token, fingerprint }
-          });
-          if (upgraded) return undefined;
-        }
-        return app.fetch(req);
-      },
-      websocket: {
-        open: (ws: any) => {
-          wsClients.add(ws);
-        },
-        close: (ws: any) => {
-          wsClients.delete(ws);
-        },
-        message: () => { }
+    nodeServer.on('upgrade', (request, socket, head) => {
+      const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+      if (requestUrl.pathname !== '/ws' && requestUrl.pathname !== '/whats/ws') {
+        socket.destroy();
+        return;
       }
+
+      const db = getDb();
+      const cookieHeader = request.headers.cookie || '';
+      const tokenHeader = request.headers['x-auth-token'];
+      const fingerprintHeader = request.headers['x-fingerprint'];
+      const token = cookieHeader.match(/auth_token=([^;]+)/)?.[1] || (Array.isArray(tokenHeader) ? tokenHeader[0] : tokenHeader);
+      const fingerprint = (Array.isArray(fingerprintHeader) ? fingerprintHeader[0] : fingerprintHeader) || cookieHeader.match(/auth_fp=([^;]+)/)?.[1];
+      const { authenticated, error } = verifySession(db, token, fingerprint);
+      if (!authenticated) {
+        const body = error || 'Unauthorized';
+        socket.end(`HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+        return;
+      }
+
+      websocketServer.handleUpgrade(request, socket, head, (ws) => {
+        wsSessions.set(ws, { token, fingerprint });
+        websocketServer.emit('connection', ws, request);
+      });
     });
 
     // WS Ping Interval
@@ -284,20 +302,20 @@ export function createHonoServer(client: WhatsAppConnection) {
       const ping = JSON.stringify({ event: 'ping', data: Date.now() });
       for (const ws of wsClients) {
         try {
-          const { token, fingerprint } = ws.data || {};
+          const { token, fingerprint } = wsSessions.get(ws) || {};
           const { authenticated } = verifySession(db, token, fingerprint);
           if (!authenticated) {
             ws.close(1008, 'Unauthorized');
             wsClients.delete(ws);
             continue;
           }
-          (ws as any).send(ping);
+          if (ws.readyState === WebSocket.OPEN) ws.send(ping);
         } catch { /* handled by close */ }
       }
     }, WS_PING_INTERVAL);
 
     log('SERVER', `Running on http://localhost:${port}`);
-    return { bunServer, broadcast };
+    return { nodeServer, broadcast };
   }
 
   return { start, broadcast, app };

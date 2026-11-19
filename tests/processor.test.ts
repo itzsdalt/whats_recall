@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test";
-import { expect, test, describe, beforeEach, mock, spyOn, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -9,7 +9,7 @@ process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 
 import { proto } from "@whiskeysockets/baileys";
-mock.module("@whiskeysockets/baileys/lib/Utils/crypto.js", () => {
+vi.mock("@whiskeysockets/baileys/lib/Utils/crypto.js", () => {
   return {
     aesDecryptGCM: (encPayload: Uint8Array) => {
       if (encPayload && encPayload.length > 0) {
@@ -19,7 +19,8 @@ mock.module("@whiskeysockets/baileys/lib/Utils/crypto.js", () => {
       }
       return new Uint8Array(0);
     },
-    hkdf: () => Buffer.alloc(32)
+    hkdf: () => Buffer.alloc(32),
+    hmacSign: () => Buffer.alloc(32)
   };
 });
 
@@ -46,15 +47,15 @@ describe("MessageProcessor", () => {
         await db.clearAllData();
         mockSock = {
             user: { id: "me@s.whatsapp.net" },
-            ev: { on: mock(() => {}) },
-            sendMessage: mock(async () => ({}))
+            ev: { on: vi.fn(() => {}) },
+            sendMessage: vi.fn(async () => ({}))
         };
-        mockBroadcast = mock(() => {});
+        mockBroadcast = vi.fn(() => {});
         processor = new MessageProcessor(mockSock, mockBroadcast);
         
         // Mock syncService.getRelatedJids
-        spyOn(syncService, 'getRelatedJids').mockImplementation(async (jid: string) => [jid]);
-        spyOn(syncService, 'resolvePN').mockImplementation(async (jid: string) => jid);
+        vi.spyOn(syncService, 'getRelatedJids').mockImplementation(async (jid: unknown) => [String(jid)]);
+        vi.spyOn(syncService, 'resolvePN').mockImplementation(async (jid: unknown) => String(jid));
     });
 
     afterAll(() => {

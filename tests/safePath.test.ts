@@ -1,4 +1,5 @@
-import { expect, test, describe, mock, beforeEach } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, beforeEach } from "vitest";
 
 describe("safePath", () => {
     let safePath: any;

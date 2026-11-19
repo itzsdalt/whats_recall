@@ -71,7 +71,7 @@ export default function ConfigPanel(props: ConfigPanelProps) {
               <div class="p-4 md:p-6 flex flex-col items-center gap-4 md:gap-6">
                 <Show when={props.pairing?.type === "qr"}>
                   <div class="flex flex-col items-center gap-4 text-center">
-                    <div class="p-2 bg-white ring-8 ring-white/5 " 
+                    <div class="p-2 bg-white ring-8 ring-white/5 [&>svg]:block [&>svg]:w-64 [&>svg]:h-64" 
                          innerHTML={createMemo(() => props.pairing?.data ? renderSVG(props.pairing.data) : "")()}>
                     </div>
                     <div class="flex flex-col gap-1">

@@ -1,9 +1,10 @@
-import { createSignal, Show, onMount, onCleanup } from "solid-js";
-import { login, fetchUptime } from "./api";
+import { createSignal, Show, onMount, onCleanup, createMemo } from "solid-js";
+import { login, enableTotp, fetchUptime } from "./api";
 import { setAuthenticated } from "./store";
 import { notify } from "./notify";
 import { EyeIcon, SunColoredIcon, MoonColoredIcon } from "./components/Icons";
 import { theme, setTheme } from "./store";
+import { renderSVG } from "uqr";
 
 export default function Login() {
   const [username, setUsername] = createSignal("whatsapp-monitor");
@@ -11,6 +12,13 @@ export default function Login() {
   const [loading, setLoading] = createSignal(false);
   const [showPassword, setShowPassword] = createSignal(false);
   const [uptimeSeconds, setUptimeSeconds] = createSignal(0);
+  const [authStep, setAuthStep] = createSignal<"password" | "totp" | "setup">("password");
+  const [totpCode, setTotpCode] = createSignal("");
+  const [totpSetup, setTotpSetup] = createSignal<{ secret: string; otpAuthUrl: string } | null>(null);
+  const totpQr = createMemo(() => {
+    const uri = totpSetup()?.otpAuthUrl;
+    return uri ? `data:image/svg+xml,${encodeURIComponent(renderSVG(uri))}` : "";
+  });
 
   onMount(async () => {
     try {
@@ -76,10 +84,33 @@ export default function Login() {
     setLoading(true);
     try {
       const fp = await getFingerprint();
-      await login(password(), fp);
+      const result = authStep() === "setup"
+        ? await enableTotp(password(), fp, totpCode())
+        : await login(password(), fp, authStep() === "totp" ? totpCode() : undefined);
+
+      if ("requiresTotpSetup" in result && result.requiresTotpSetup) {
+        if (!result.secret || !result.otpAuthUrl) {
+          throw new Error("Authenticator setup could not be loaded.");
+        }
+        setTotpSetup({ secret: result.secret, otpAuthUrl: result.otpAuthUrl });
+        setTotpCode("");
+        setAuthStep("setup");
+        return;
+      }
+
+      if ("requiresTotp" in result && result.requiresTotp) {
+        setTotpCode("");
+        setAuthStep("totp");
+        return;
+      }
+
+      if (!result.success || !result.token) {
+        throw new Error("Sign-in could not be completed.");
+      }
+
       localStorage.setItem("fingerprint", fp); // Persist fingerprint for API requests
       setAuthenticated(true);
-      notify.success("Access Granted", "Session established.");
+      notify.success("Access Granted", authStep() === "setup" ? "Authenticator enabled." : "Session established.");
     } catch (err: any) {
       notify.warning(
         "Access Denied",
@@ -120,7 +151,7 @@ export default function Login() {
         {/* Hero Section — compact on mobile */}
         <div class="px-6 md:px-8 py-8 md:py-12 border-b border-border">
           <h1 class="text-display-md md:text-display-lg text-text-display uppercase mb-2">
-            SIGN<br/>IN
+            {authStep() === "setup" ? <>SET UP<br/>AUTHENTICATOR</> : authStep() === "totp" ? <>VERIFY<br/>CODE</> : <>SIGN<br/>IN</>}
           </h1>
           <div class="flex items-center gap-4 text-metadata opacity-40">
             <span>Secure Access</span>
@@ -130,56 +161,107 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} class="p-0">
           {/* Identity Field — responsive label */}
-          <div class="flex flex-col md:grid md:grid-cols-[120px_1fr] border-b border-border group focus-within:bg-border/5 transition-colors">
-            <label 
-              for="username-field"
-              class="md:border-r border-b md:border-b-0 border-border px-4 md:px-6 py-3 md:py-6 flex items-center text-label font-bold cursor-pointer"
-            >
-              USERNAME
-            </label>
-            <input
-              id="username-field"
-              type="text"
-              name="username"
-              autocomplete="username"
-              placeholder="USER_ID"
-              value={username()}
-              onInput={(e) => setUsername(e.currentTarget.value)}
-              class="w-full bg-transparent px-4 md:px-6 py-4 md:py-6 outline-none text-[13px] font-mono tracking-[0.15em] md:tracking-[0.2em] uppercase placeholder:opacity-20 text-text-primary"
-            />
-          </div>
+          <Show when={authStep() === "password"}>
+            <div class="flex flex-col md:grid md:grid-cols-[120px_1fr] border-b border-border group focus-within:bg-border/5 transition-colors">
+              <label
+                for="username-field"
+                class="md:border-r border-b md:border-b-0 border-border px-4 md:px-6 py-3 md:py-6 flex items-center text-label font-bold cursor-pointer"
+              >
+                USERNAME
+              </label>
+              <input
+                id="username-field"
+                type="text"
+                name="username"
+                autocomplete="username"
+                placeholder="USER_ID"
+                value={username()}
+                onInput={(e) => setUsername(e.currentTarget.value)}
+                class="w-full bg-transparent px-4 md:px-6 py-4 md:py-6 outline-none text-[13px] font-mono tracking-[0.15em] md:tracking-[0.2em] uppercase placeholder:opacity-20 text-text-primary"
+              />
+            </div>
+          </Show>
 
           {/* Access Key Field — responsive label */}
-          <div class="flex flex-col md:grid md:grid-cols-[120px_1fr] border-b border-border group focus-within:bg-border/5 transition-colors relative">
-            <label 
-              for="password-field"
-              class="md:border-r border-b md:border-b-0 border-border px-4 md:px-6 py-3 md:py-6 flex items-center text-label font-bold cursor-pointer"
-            >
-              PASSWORD
-            </label>
-            <div class="relative flex items-center grow">
+          <Show when={authStep() === "password"}>
+            <div class="flex flex-col md:grid md:grid-cols-[120px_1fr] border-b border-border group focus-within:bg-border/5 transition-colors relative">
+              <label
+                for="password-field"
+                class="md:border-r border-b md:border-b-0 border-border px-4 md:px-6 py-3 md:py-6 flex items-center text-label font-bold cursor-pointer"
+              >
+                PASSWORD
+              </label>
+              <div class="relative flex items-center grow">
+                <input
+                  id="password-field"
+                  type={showPassword() ? "text" : "password"}
+                  name="password"
+                  autocomplete="current-password"
+                  placeholder="**********"
+                  value={password()}
+                  onInput={(e) => setPassword(e.currentTarget.value)}
+                  required
+                  autofocus
+                  class="w-full bg-transparent px-4 md:px-6 py-4 md:py-6 outline-none text-[13px] font-mono tracking-[0.3em] md:tracking-[0.4em] placeholder:opacity-20 pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword())}
+                  class="absolute right-4 p-2 text-text-disabled hover:text-text-primary transition-colors cursor-pointer"
+                  aria-label={showPassword() ? "Hide password" : "Show password"}
+                >
+                  <EyeIcon size={16} />
+                </button>
+              </div>
+            </div>
+          </Show>
+
+          <Show when={authStep() !== "password"}>
+            <Show when={authStep() === "setup"}>
+              <div class="flex flex-col items-center gap-3 border-b border-border p-5 text-center">
+                <p class="text-label uppercase">SCAN WITH AN AUTHENTICATOR APP</p>
+                <img
+                  src={totpQr()}
+                  alt="Authenticator setup QR code"
+                  class="h-56 w-56 bg-white p-2"
+                />
+                <p class="text-metadata uppercase opacity-60">OR ENTER THIS SECRET MANUALLY</p>
+                <code class="text-label break-all select-all">{totpSetup()?.secret}</code>
+              </div>
+            </Show>
+            <div class="flex flex-col md:grid md:grid-cols-[120px_1fr] border-b border-border group focus-within:bg-border/5 transition-colors">
+              <label
+                for="totp-code"
+                class="md:border-r border-b md:border-b-0 border-border px-4 md:px-6 py-3 md:py-6 flex items-center text-label font-bold cursor-pointer"
+              >
+                {authStep() === "setup" ? "CONFIRM CODE" : "AUTHENTICATOR"}
+              </label>
               <input
-                id="password-field"
-                type={showPassword() ? "text" : "password"}
-                name="password"
-                autocomplete="current-password"
-                placeholder="**********"
-                value={password()}
-                onInput={(e) => setPassword(e.currentTarget.value)}
+                id="totp-code"
+                type="text"
+                name="totp-code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxlength={6}
+                placeholder="000000"
+                value={totpCode()}
+                onInput={(e) => setTotpCode(e.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 autofocus
-                class="w-full bg-transparent px-4 md:px-6 py-4 md:py-6 outline-none text-[13px] font-mono tracking-[0.3em] md:tracking-[0.4em] placeholder:opacity-20 pr-12"
+                class="w-full bg-transparent px-4 md:px-6 py-4 md:py-6 outline-none text-[13px] font-mono tracking-[0.3em] placeholder:opacity-20"
               />
+            </div>
+            <div class="px-5 pt-4">
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword())}
-                class="absolute right-4 p-2 text-text-disabled hover:text-text-primary transition-colors cursor-pointer"
-                aria-label={showPassword() ? "Hide password" : "Show password"}
+                onClick={() => { setAuthStep("password"); setTotpCode(""); }}
+                class="btn btn-secondary w-full"
               >
-                <EyeIcon size={16} />
+                BACK
               </button>
             </div>
-          </div>
+          </Show>
 
           {/* Action Button */}
           <div class="p-5 md:p-8">
@@ -189,7 +271,7 @@ export default function Login() {
               class="btn btn-primary w-full py-5 md:py-6"
             >
               <Show when={!loading()} fallback={"AUTHENTICATING..."}>
-                SIGN IN
+                {authStep() === "setup" ? "ENABLE AUTHENTICATOR" : authStep() === "totp" ? "VERIFY CODE" : "SIGN IN"}
               </Show>
             </button>
           </div>

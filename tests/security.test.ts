@@ -1,4 +1,21 @@
-import { expect, test, describe, afterEach, mock, beforeEach } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, afterEach, beforeEach } from "vitest";
+import { generateTotpCode, generateTotpSecret, verifyTotpCode } from "../src/api/totp.ts";
+
+describe("TOTP", () => {
+    const rfcSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+    test("matches the RFC 6238 SHA-1 test vector", () => {
+        expect(generateTotpCode(rfcSecret, 59_000)).toBe("287082");
+        expect(verifyTotpCode(rfcSecret, "287082", 59_000)).toBe(1);
+    });
+
+    test("rejects malformed or incorrect codes and creates strong secrets", () => {
+        expect(verifyTotpCode(rfcSecret, "12345", 59_000)).toBeNull();
+        expect(verifyTotpCode(rfcSecret, "000000", 59_000)).toBeNull();
+        expect(generateTotpSecret()).toMatch(/^[A-Z2-7]{32}$/);
+    });
+});
 
 describe("getClientIp", () => {
     let getClientIp: any;

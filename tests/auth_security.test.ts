@@ -8,7 +8,7 @@ const tempDir = mkdtempSync(join(tmpdir(), "whatsapp-auth-test-"));
 process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 
-import { expect, test, describe, beforeEach, afterEach, spyOn, mock, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 
 const { getDb } = await import("../src/db/database.ts");
 const { createHonoServer } = await import("../src/api/server.ts");
@@ -22,7 +22,7 @@ describe("AUTH_PASSWORD Security", () => {
     beforeEach(async () => {
         await db.clearAllData();
         originalAuthPassword = process.env.AUTH_PASSWORD;
-        exitSpy = spyOn(process, "exit").mockImplementation(() => {
+        exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
             throw new Error("process.exit called");
         });
     });
@@ -68,7 +68,7 @@ describe("Fingerprint Enforcement", () => {
                 header: (name: string) => h.get(name),
                 raw: { headers: h }
             },
-            json: mock((data: any, status: number) => ({ data, status })),
+            json: vi.fn((data: any, status: number) => ({ data, status })),
         };
     };
 
@@ -93,7 +93,7 @@ describe("Fingerprint Enforcement", () => {
 
     test("should allow if fingerprints match", async () => {
         db.raw.query("INSERT INTO sessions (token, fingerprint, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))").run("valid-token", "secure-fp-123");
-        const next = mock(async () => {});
+        const next = vi.fn(async () => {});
         const c = createMockContext({ 
             "X-Auth-Token": "valid-token",
             "X-Fingerprint": "secure-fp-123"

@@ -1,4 +1,5 @@
-import { expect, test, describe, spyOn, afterEach, beforeEach, setSystemTime } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, afterEach, beforeEach, vi } from "vitest";
 // Set VERBOSE=true before importing logger to ensure evlog is not silent during tests
 process.env.VERBOSE = "true";
 import { log } from "../src/logger.ts";
@@ -7,16 +8,17 @@ describe("logger", () => {
     let consoleSpy: any;
 
     beforeEach(() => {
-        consoleSpy = spyOn(console, "log").mockImplementation(() => {});
+        consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     });
 
     afterEach(() => {
         if (consoleSpy) consoleSpy.mockRestore();
-        setSystemTime();
+        vi.useRealTimers();
     });
 
     function mockSystemDate(isoString: string) {
-        setSystemTime(new Date(isoString));
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(isoString));
     }
 
 

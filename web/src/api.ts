@@ -57,10 +57,29 @@ async function request<T>(url: string, init?: RequestInit, silent = false): Prom
 export async function login(
   password: string,
   fingerprint: string,
-): Promise<{ success: boolean; token?: string }> {
+  code?: string,
+): Promise<{
+  success: boolean;
+  token?: string;
+  requiresTotp?: boolean;
+  requiresTotpSetup?: boolean;
+  secret?: string;
+  otpAuthUrl?: string;
+}> {
   return request(`${BASE_URL}/api/auth/login`, {
     method: "POST",
-    body: JSON.stringify({ password, fingerprint }),
+    body: JSON.stringify({ password, fingerprint, code }),
+  });
+}
+
+export async function enableTotp(
+  password: string,
+  fingerprint: string,
+  code: string,
+): Promise<{ success: boolean; token?: string }> {
+  return request(`${BASE_URL}/api/auth/totp/enable`, {
+    method: "POST",
+    body: JSON.stringify({ password, fingerprint, code }),
   });
 }
 

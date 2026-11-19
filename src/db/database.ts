@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { mkdirSync, existsSync, rmSync } from 'fs';
 import { unlink } from 'fs/promises';
 import { join, dirname, resolve } from 'path';
@@ -7,6 +7,49 @@ import { WhatsAppChat, WhatsAppMessage, AppSettings } from '../types.ts';
 import { log } from '../logger.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+class NodeSqliteDatabase {
+  private readonly database: DatabaseSync;
+
+  constructor(path: string) {
+    this.database = new DatabaseSync(path);
+  }
+
+  run(sql: string) {
+    this.database.exec(sql);
+  }
+
+  query(sql: string) {
+    const statement = this.database.prepare(sql);
+    return {
+      all: (...params: SQLInputValue[]) => statement.all(...params) as any[],
+      get: (...params: SQLInputValue[]) => statement.get(...params) ?? null,
+      run: (...params: SQLInputValue[]) => statement.run(...params),
+    };
+  }
+
+  prepare(sql: string) {
+    return this.database.prepare(sql);
+  }
+
+  transaction<T extends (...args: any[]) => any>(callback: T) {
+    return (...args: Parameters<T>): ReturnType<T> => {
+      this.database.exec('BEGIN');
+      try {
+        const result = callback(...args);
+        this.database.exec('COMMIT');
+        return result;
+      } catch (error) {
+        this.database.exec('ROLLBACK');
+        throw error;
+      }
+    };
+  }
+
+  close() {
+    this.database.close();
+  }
+}
 
 const getDynamicDataDir = () => process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : join(__dirname, '..', '..', 'data');
 const getDynamicMediaDir = () => {
@@ -40,9 +83,12 @@ export function getDb(testDbPath?: string, testMediaDir?: string) {
   if (!existsSync(currentDataDir)) mkdirSync(currentDataDir, { recursive: true });
   if (!existsSync(currentMediaDir)) mkdirSync(currentMediaDir, { recursive: true });
 
-  const db = new Database(currentDbPath);
+  const db = new NodeSqliteDatabase(currentDbPath);
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
+  const hadAuthTotpTable = !!db.query(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_totp'"
+  ).get();
 
   dbInstances.set(currentDbPath, db);
 
@@ -91,6 +137,13 @@ export function getDb(testDbPath?: string, testMediaDir?: string) {
       fingerprint TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_totp (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      secret TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      last_used_step INTEGER NOT NULL DEFAULT -1
     );
 
     CREATE TABLE IF NOT EXISTS monitored_chats (
@@ -147,6 +200,10 @@ export function getDb(testDbPath?: string, testMediaDir?: string) {
     CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id);
     CREATE INDEX IF NOT EXISTS idx_chats_last_message_at ON chats(last_message_at DESC);
   `);
+
+  if (!hadAuthTotpTable) {
+    db.query('DELETE FROM sessions').run();
+  }
 
   try {
     db.run("ALTER TABLE messages ADD COLUMN message_secret TEXT");
@@ -569,6 +626,43 @@ export function getDb(testDbPath?: string, testMediaDir?: string) {
     getSettings(): AppSettings {
       const rows = db.query("SELECT key, value FROM settings").all() as { key: string, value: string }[];
       return rows.reduce((acc, r) => ({ ...acc, [r.key]: r.value }), {});
+    },
+
+    getTotpConfig(): { secret: string | null; enabled: boolean; lastUsedStep: number } {
+      const row = db.query(
+        'SELECT secret, enabled, last_used_step FROM auth_totp WHERE id = 1'
+      ).get() as { secret: string; enabled: number; last_used_step: number } | null;
+      return row
+        ? { secret: row.secret, enabled: row.enabled === 1, lastUsedStep: row.last_used_step }
+        : { secret: null, enabled: false, lastUsedStep: -1 };
+    },
+
+    getOrCreateTotpSecret(secret: string): string {
+      return db.transaction((newSecret: string) => {
+        const result = db.query(
+          'INSERT INTO auth_totp (id, secret) VALUES (1, ?) ON CONFLICT(id) DO NOTHING'
+        ).run(newSecret);
+        if (Number(result.changes) === 1) db.query('DELETE FROM sessions').run();
+        return (db.query('SELECT secret FROM auth_totp WHERE id = 1').get() as { secret: string }).secret;
+      })(secret);
+    },
+
+    enableTotp(step: number): boolean {
+      return db.transaction((usedStep: number) => {
+        const result = db.query(
+          'UPDATE auth_totp SET enabled = 1, last_used_step = ? WHERE id = 1 AND enabled = 0 AND last_used_step < ?'
+        ).run(usedStep, usedStep);
+        const enabled = Number(result.changes) === 1;
+        if (enabled) db.query('DELETE FROM sessions').run();
+        return enabled;
+      })(step);
+    },
+
+    consumeTotpStep(step: number): boolean {
+      const result = db.query(
+        'UPDATE auth_totp SET last_used_step = ? WHERE id = 1 AND enabled = 1 AND last_used_step < ?'
+      ).run(step, step);
+      return Number(result.changes) === 1;
     },
 
     updateSetting(key: string, value: string) {

@@ -30,7 +30,6 @@ export default defineConfig([
       globals: {
         ...globals.node,
         ...globals.browser,
-        ...globals.bun,
       },
     },
     rules: {

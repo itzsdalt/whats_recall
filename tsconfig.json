@@ -14,7 +14,7 @@
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
     "types": [
-      "bun"
+      "node"
     ]
   },
   "include": [

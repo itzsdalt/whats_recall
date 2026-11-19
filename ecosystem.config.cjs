@@ -1,8 +1,10 @@
 module.exports = {
   apps: [{
     name: 'whats-recall',
-    script: 'src/index.ts',
-    interpreter: 'bun',
+    script: 'node_modules/.bin/tsx',
+    args: 'src/index.ts',
+    interpreter: 'node',
+    node_args: '--env-file-if-exists=.env',
     env: {
       NODE_ENV: 'production',
       // VERBOSE: 'true',

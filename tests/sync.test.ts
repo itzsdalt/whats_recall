@@ -1,4 +1,5 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+process.env.NODE_ENV = "test";
+import { expect, test, describe, beforeAll, afterAll } from "vitest";
 import { WhatsAppSync } from "../src/whatsapp/sync.ts";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";

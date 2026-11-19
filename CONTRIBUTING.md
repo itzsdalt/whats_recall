@@ -7,7 +7,7 @@ Thank you for your interest in improving **WHATSRECALL**. This project follows s
 ## 01_TECHNICAL_STANDARDS
 
 ### 🛠️ RUNTIME_&_CORE
-- **BUN_ONLY**: Standard Node.js is not supported. Use `bun` for all operations.
+- **NODE.JS**: Use Node.js 22.13 or newer and npm for all operations.
 - **HONO_BACKEND**: Use Hono's middleware patterns for all API endpoints.
 - **SOLIDJS_FRONTEND**: Maintain fine-grained reactivity. Avoid heavy state-management libraries if simple signals suffice.
 - **SQLITE_WAL**: Always ensure the database remains in WAL mode for concurrency.
@@ -36,10 +36,10 @@ All UI contributions must strictly adhere to the **Softened Nothing Design Syste
 
 ## 03_DEVELOPMENT_WORKFLOW
 
-1. **SETUP**: `bun install`
-2. **DEVELOP**: `bun dev` (starts both backend and frontend).
-3. **STYLE**: Run `bun run fix` to align CSS with the design system.
-4. **TEST**: Run `bun test` or `bun t` (quiet mode).
+1. **SETUP**: `npm install`
+2. **DEVELOP**: `npm run dev` (starts the backend with watch mode).
+3. **STYLE**: Run `npm run fix` to align CSS with the design system.
+4. **TEST**: Run `npm test` or `npm run t` (compact output).
 
 ---
 
