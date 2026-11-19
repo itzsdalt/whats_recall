@@ -37,8 +37,10 @@ export class WhatsAppConnection {
     private lastPairingCodeRequest = 0;
     private pairingRequested = false;
     private notifyWhatsApp = false;
+    private broadcast: BroadcastFn;
 
-    constructor(private broadcast: BroadcastFn) {
+    constructor(broadcast: BroadcastFn) {
+        this.broadcast = broadcast;
         if (!existsSync(getAuthDir()))
             mkdirSync(getAuthDir(), { recursive: true });
 
