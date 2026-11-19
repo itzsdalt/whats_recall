@@ -13,6 +13,7 @@ import {
   setChats,
   setStats,
   currentChatId,
+  messages,
   setMessages,
   messageCache,
 } from "./store";
@@ -20,6 +21,27 @@ import { notify } from "./notify";
 import type { Message, Chat } from "./types";
 import Login from "./Login";
 import Dashboard from "./Dashboard";
+
+function upsertMessage(previous: Message[], incoming: Message): Message[] {
+  const index = previous.findIndex(
+    (message) => message.message_id === incoming.message_id,
+  );
+  if (index === -1) return [...previous, incoming];
+
+  const next = [...previous];
+  const existing = previous[index];
+  next[index] = {
+    ...existing,
+    ...incoming,
+    is_deleted: existing.is_deleted || incoming.is_deleted,
+    deleted_at: existing.deleted_at || incoming.deleted_at,
+    reactions: existing.reactions?.length
+      ? existing.reactions
+      : incoming.reactions,
+    edits: existing.edits?.length ? existing.edits : incoming.edits,
+  };
+  return next;
+}
 
 export default function App() {
   let bootstrapped = false;
@@ -90,6 +112,31 @@ export default function App() {
         const senderName = msg.sender_name;
         const profilePic = msg.profile_pic || null;
 
+        const normalized: Message = {
+          ...msg,
+          is_from_me: msg.is_from_me ? 1 : 0,
+          is_deleted: 0,
+          deleted_at: null,
+          is_view_once: msg.is_view_once ? 1 : 0,
+          reactions: [],
+          edits: [],
+        };
+        const cachedMessages =
+          messageCache.get(chatId) ||
+          (currentChatId() === chatId ? messages() : []);
+        const alreadyKnown =
+          cachedMessages.some(
+            (message) => message.message_id === normalized.message_id,
+          ) ||
+          (currentChatId() === chatId &&
+            messages().some(
+              (message) => message.message_id === normalized.message_id,
+            ));
+        messageCache.set(
+          chatId,
+          upsertMessage(cachedMessages, normalized),
+        );
+
         setChats((prev) => {
           const idx = prev.findIndex((c) => c.chat_id === chatId);
           if (idx >= 0) {
@@ -100,7 +147,8 @@ export default function App() {
               last_message_preview: (msg.body as string) || `MEDIA_${msg.type?.toUpperCase() || 'CONTENT'}`,
               last_message_sender: senderName,
               last_message_at: new Date().toISOString(),
-              total_messages: updated[idx].total_messages + 1,
+              total_messages:
+                updated[idx].total_messages + (alreadyKnown ? 0 : 1),
               profile_pic: profilePic || updated[idx].profile_pic,
             };
             return updated;
@@ -124,16 +172,7 @@ export default function App() {
         });
 
         if (currentChatId() === chatId) {
-          const normalized: Message = {
-            ...msg,
-            is_from_me: msg.is_from_me ? 1 : 0,
-            is_deleted: 0,
-            deleted_at: null,
-            is_view_once: msg.is_view_once ? 1 : 0,
-            reactions: [],
-            edits: [],
-          };
-          setMessages((m) => [...m, normalized]);
+          setMessages((previous) => upsertMessage(previous, normalized));
         }
       }
 

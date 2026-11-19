@@ -147,7 +147,7 @@ export function MessageBubble(props: MessageBubbleProps) {
           </div>
           <div class="flex flex-col gap-0.5 min-w-0">
             <span class="text-[11px] font-mono font-bold text-text-secondary uppercase tracking-wider">VIEW_ONCE_SEALED</span>
-            <span class="text-[9px] font-mono text-text-disabled uppercase tracking-widest">AWAITING_REPLY</span>
+            <span class="text-[9px] font-mono text-text-disabled uppercase tracking-widest">MEDIA_NOT_RECEIVED</span>
           </div>
         </div>
       </Show>
