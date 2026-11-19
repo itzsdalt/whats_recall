@@ -1,3 +1,4 @@
+import './load-env.ts';
 import { getDb } from './db/database.ts';
 import { WhatsAppConnection } from './whatsapp/connection.ts';
 import { createHonoServer } from './api/server.ts';
