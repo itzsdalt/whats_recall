@@ -18,7 +18,7 @@ import { readFile } from 'fs/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import { getMediaDir, getDb } from '../db/database.ts';
 import { WhatsAppConnection } from '../whatsapp/connection.ts';
-import { BroadcastEvent } from '../types.ts';
+import type { BroadcastEvent } from '../types.ts';
 import { safePath, pruneApiRateLimits, verifySession, getClientIp } from './utils.ts';
 import { mutationBodyLimit, readJsonBody } from './mutation-helpers.ts';
 import { evlog, type EvlogVariables } from 'evlog/hono';

@@ -2,7 +2,7 @@ import { getDb } from './db/database.ts';
 import { WhatsAppConnection } from './whatsapp/connection.ts';
 import { createHonoServer } from './api/server.ts';
 import { log } from './logger.ts';
-import { BroadcastEvent } from './types.ts';
+import type { BroadcastEvent } from './types.ts';
 
 log('BOOT', 'Starting WhatsRecall (Modular TypeScript Edition)');
 log('BOOT', `Node env: ${process.env.NODE_ENV || 'development'}`);

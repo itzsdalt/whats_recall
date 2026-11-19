@@ -3,7 +3,7 @@ import { mkdirSync, existsSync, rmSync } from 'fs';
 import { unlink } from 'fs/promises';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { WhatsAppChat, WhatsAppMessage, AppSettings } from '../types.ts';
+import type { WhatsAppChat, WhatsAppMessage, AppSettings } from '../types.ts';
 import { log } from '../logger.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

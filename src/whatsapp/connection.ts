@@ -4,7 +4,7 @@ import makeWASocket, {
     jidNormalizedUser,
     fetchLatestBaileysVersion,
     isJidGroup,
-    WAMessage,
+    type WAMessage,
 } from "@whiskeysockets/baileys";
 import { existsSync, mkdirSync } from "fs";
 import { rm } from "fs/promises";
@@ -16,7 +16,7 @@ import { syncService } from "./sync.ts";
 import { MessageProcessor } from "./processor.ts";
 import { downloadProfilePic } from "./media.ts";
 import { getChatName, extractJidId } from "./utils.ts";
-import { BroadcastFn, PairingStatus } from "../types.ts";
+import type { BroadcastFn, PairingStatus } from "../types.ts";
 
 const getAuthDir = () => join(getDataDir(), "baileys_auth");
 

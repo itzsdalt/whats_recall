@@ -1,4 +1,4 @@
-import { downloadMediaMessage, WAMessage, downloadContentFromMessage } from '@whiskeysockets/baileys';
+import { downloadMediaMessage, type WAMessage, downloadContentFromMessage } from '@whiskeysockets/baileys';
 import { writeFile } from 'fs/promises';
 import { mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';

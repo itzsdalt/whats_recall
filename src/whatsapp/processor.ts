@@ -1,7 +1,7 @@
 import {
     getContentType,
     jidNormalizedUser,
-    WAMessage,
+    type WAMessage,
     isJidGroup,
     proto,
 } from "@whiskeysockets/baileys";
@@ -12,7 +12,7 @@ import { syncService } from "./sync.ts";
 import { downloadMedia, downloadProfilePic } from "./media.ts";
 import { join } from "path";
 import { existsSync } from "fs";
-import { BroadcastFn, WhatsAppMessage } from "../types.ts";
+import type { BroadcastFn, WhatsAppMessage } from "../types.ts";
 import {
     getChatNameAsync,
     normalizeMessage,
