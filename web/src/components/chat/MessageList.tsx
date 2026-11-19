@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { Message } from "../../types";
+import { formatMessageDate } from "../../utils";
 import { MessageBubble, ImageGroup } from "./MessageBubble";
 
 interface MessageListProps {
@@ -11,16 +12,8 @@ interface MessageListProps {
   highlightQuery?: string;
 }
 
-const messageListDateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-});
-
 export function formatDateForTimestamp(ts: number): string {
-  const d = new Date(ts * 1000);
-  d.setHours(23, 59, 59, 999);
-  return messageListDateFormatter.format(d);
+  return formatMessageDate(new Date(ts * 1000));
 }
 
 export default function MessageList(props: MessageListProps) {
@@ -35,24 +28,10 @@ export default function MessageList(props: MessageListProps) {
     }[] = [];
     let i = 0;
 
-    let currentDayStart = 0;
-    let currentDayEnd = 0;
-    let cachedDateStr = "";
-
     while (i < msgs.length) {
       const msg = msgs[i];
       const msgTime = msg.timestamp * 1000;
-
-      if (msgTime < currentDayStart || msgTime > currentDayEnd) {
-        const msgDate = new Date(msgTime);
-        msgDate.setHours(0, 0, 0, 0);
-        currentDayStart = msgDate.getTime();
-        msgDate.setHours(23, 59, 59, 999);
-        currentDayEnd = msgDate.getTime();
-        cachedDateStr = messageListDateFormatter.format(msgDate);
-      }
-
-      const dateStr = cachedDateStr;
+      const dateStr = formatMessageDate(new Date(msgTime));
       const showDate = dateStr !== lastDate;
       if (showDate) lastDate = dateStr;
 

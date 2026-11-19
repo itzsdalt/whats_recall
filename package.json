@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
-    "build:web": "npm install --prefix web && npm run build --prefix web",
+    "build:web": "npm install --prefix web --include=dev && npm run build --prefix web",
     "build": "npm run build:web",
     "lint": "eslint . && npm run lint --prefix web",
     "fix": "eslint . --fix && npm run fix --prefix web",

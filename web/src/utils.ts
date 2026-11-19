@@ -63,22 +63,56 @@ export function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+const timeZone = import.meta.env.VITE_TIME_ZONE || undefined;
+const timeZoneOption = timeZone ? { timeZone } : {};
+
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
+  ...timeZoneOption,
 });
 
-const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-const fullDateFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const dayFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  ...timeZoneOption,
+});
+const fullDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  ...timeZoneOption,
+});
+const calendarDateFormatter = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  ...timeZoneOption,
+});
+const messageDateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  ...timeZoneOption,
+});
+
+function calendarDay(date: Date): number {
+  const parts = calendarDateFormatter.formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+  return Date.UTC(year, month - 1, day) / 86400000;
+}
 
 export function formatTime(date: Date): string {
   return timeFormatter.format(date);
 }
 
+export function formatMessageDate(date: Date): string {
+  return messageDateFormatter.format(date);
+}
+
 export function formatRelativeDate(date: Date): string {
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / 86400000);
+  const days = calendarDay(now) - calendarDay(date);
 
   if (days === 0) return formatTime(date);
   if (days === 1) return "YESTERDAY";
