@@ -67,6 +67,8 @@ export interface WhatsAppEdit {
 export interface AppSettings {
   whatsapp_phone?: string;
   whatsapp_notify?: 'true' | 'false';
+  whatsapp_hide_online?: 'true' | 'false';
+  whatsapp_hide_read_receipts?: 'true' | 'false';
   whatsapp_pairing_method?: 'qr' | 'code';
   [key: string]: string | undefined;
 }

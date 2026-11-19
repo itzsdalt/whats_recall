@@ -264,6 +264,12 @@ export class WhatsAppConnection {
                     authenticated: true,
                     id: this.myId,
                 });
+                this.applyPrivacySettings().catch((err: unknown) => {
+                    log(
+                        "CONN",
+                        `Failed to apply WhatsApp privacy settings: ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                });
             }
         });
 
@@ -408,6 +414,35 @@ export class WhatsAppConnection {
             log("CONN", `Error getting chats: ${e.message}`);
             return [];
         }
+    }
+
+    public async updatePrivacySetting(
+        key: "whatsapp_hide_online" | "whatsapp_hide_read_receipts",
+        value: "true" | "false",
+    ) {
+        if (!this.isReady || !this.sock) return;
+
+        if (key === "whatsapp_hide_online") {
+            await this.sock.updateOnlinePrivacy(
+                value === "true" ? "match_last_seen" : "all",
+            );
+        } else {
+            await this.sock.updateReadReceiptsPrivacy(
+                value === "true" ? "none" : "all",
+            );
+        }
+    }
+
+    private async applyPrivacySettings() {
+        const settings = getDb().getSettings();
+        await this.sock.updateOnlinePrivacy(
+            settings.whatsapp_hide_online === "true"
+                ? "match_last_seen"
+                : "all",
+        );
+        await this.sock.updateReadReceiptsPrivacy(
+            settings.whatsapp_hide_read_receipts === "true" ? "none" : "all",
+        );
     }
 
     public async getProfilePic(jid: string) {

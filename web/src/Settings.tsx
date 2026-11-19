@@ -196,8 +196,8 @@ export default function Settings() {
     }
   }
 
-  async function handleConfigUpdate(key: string, value: string) {
-    if (config() && config()![key] === value) return;
+  async function handleConfigUpdate(key: string, value: string): Promise<boolean> {
+    if (config() && config()![key] === value) return true;
     setSavingConfig(key);
     try {
       await updateSetting(key, value);
@@ -215,8 +215,10 @@ export default function Settings() {
         } as any);
       }
       notify.success("Setting saved", `${key.replace(/_/g, " ")} updated.`);
+      return true;
     } catch {
       notify.warning("Save failed", "Something went wrong.");
+      return false;
     } finally {
       setSavingConfig(null);
     }
@@ -321,7 +323,7 @@ export default function Settings() {
             onConfigUpdate={handleConfigUpdate}
             onReset={handleReset}
             onToggleNotify={() =>
-              handleConfigUpdate(
+              void handleConfigUpdate(
                 "whatsapp_notify",
                 config()?.whatsapp_notify === "true" ? "false" : "true",
               )

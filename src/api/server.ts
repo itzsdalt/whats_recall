@@ -10,7 +10,7 @@ import auth from './auth.ts';
 import { authMiddleware } from './middleware.ts';
 import chats from './chats.ts';
 import monitored from './monitored.ts';
-import settings from './settings.ts';
+import { createSettingsRouter } from './settings.ts';
 import whatsappRouter from './whatsapp.ts';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -103,7 +103,7 @@ export function createHonoServer(client: WhatsAppConnection) {
   api.use('*', authMiddleware as any);
   api.route('/chats', chats(client));
   api.route('/monitored', monitored(client));
-  api.route('/settings', settings);
+  api.route('/settings', createSettingsRouter(client));
   api.route('/whatsapp', whatsappRouter(client));
 
   api.get('/media/:filename{.*}', async (c) => {

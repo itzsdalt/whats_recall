@@ -1,4 +1,4 @@
-import { Show, createSignal, createMemo } from "solid-js";
+import { For, Show, createSignal, createMemo } from "solid-js";
 import { AlertTriangleIcon, SettingsIcon, EyeIcon } from "../Icons";
 import RelayPreview from "./RelayPreview";
 import { renderSVG } from "uqr";
@@ -11,7 +11,7 @@ interface ConfigPanelProps {
   showResetNotice: boolean;
   isWaitingForPairing: boolean;
   stats: any;
-  onConfigUpdate: (_key: string, _value: string) => void;
+  onConfigUpdate: (_key: string, _value: string) => Promise<boolean>;
   onReset: () => void;
   onToggleNotify: () => void;
 }
@@ -34,10 +34,10 @@ export default function ConfigPanel(props: ConfigPanelProps) {
     }
   };
 
-  const saveDrafts = () => {
-    Object.entries(drafts()).forEach(([key, value]) => {
-      props.onConfigUpdate(key, value);
-    });
+  const saveDrafts = async () => {
+    for (const [key, value] of Object.entries(drafts())) {
+      if (!(await props.onConfigUpdate(key, value))) return;
+    }
     setDrafts({});
   };
 
@@ -146,6 +146,100 @@ export default function ConfigPanel(props: ConfigPanelProps) {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="border-b border-border">
+        <div class="px-4 md:px-6 py-2 md:py-3 bg-surface-raised/30 border-b border-border flex items-center justify-between">
+          <h3 class="text-[9px] md:text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em] flex items-center gap-2">
+            PRIVACY
+          </h3>
+          <span class="text-[8px] md:text-[9px] text-text-disabled font-mono tracking-widest uppercase">
+            WHATSAPP_ACCOUNT
+          </span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2">
+          <For
+            each={[
+              {
+                key: "whatsapp_hide_online",
+                label: "HIDE_ONLINE_STATUS",
+                description: "ONLINE_VISIBILITY_MATCHES_LAST_SEEN",
+              },
+              {
+                key: "whatsapp_hide_read_receipts",
+                label: "HIDE_READ_RECEIPTS",
+                description: "DISABLE_READ_RECEIPTS_EXCEPT_GROUP_CHATS",
+              },
+            ]}
+          >
+            {(setting, index) => {
+              const isEnabled = () =>
+                (drafts()[setting.key] ??
+                  props.config?.[setting.key] ??
+                  "false") === "true";
+              return (
+                <div
+                  class="grid grid-cols-[1fr_80px] border-b border-border"
+                  classList={{ "md:border-l": index() === 1 }}
+                >
+                  <div class="p-4 md:p-6 flex flex-col gap-1 border-r border-border">
+                    <div class="text-[11px] md:text-[12px] font-bold uppercase tracking-widest font-mono text-text-primary">
+                      {setting.label}
+                    </div>
+                    <div class="text-[8px] md:text-[9px] text-text-secondary uppercase tracking-widest font-mono">
+                      {setting.description}
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-center p-4">
+                    <label class="relative inline-flex flex-col items-center cursor-pointer gap-1.5 antialiased">
+                      <input
+                        type="checkbox"
+                        aria-label={setting.label.replace(/_/g, " ")}
+                        checked={isEnabled()}
+                        disabled={!!props.savingConfig}
+                        onChange={() =>
+                          updateDraft(
+                            setting.key,
+                            isEnabled() ? "false" : "true",
+                          )
+                        }
+                        class="sr-only peer"
+                      />
+                      <div
+                        class={`w-12 h-6 border transition-all duration-300 rounded-full relative p-1 flex items-center ${
+                          isEnabled()
+                            ? "bg-text-display border-text-display"
+                            : "bg-surface border-border-visible"
+                        }`}
+                      >
+                        <div
+                          class="h-4 w-4 rounded-full transition-all duration-300"
+                          style={{
+                            "background-color": isEnabled()
+                              ? "var(--black)"
+                              : "var(--text-disabled)",
+                            transform: isEnabled()
+                              ? "translateX(24px)"
+                              : "translateX(0)",
+                          }}
+                        />
+                      </div>
+                      <span
+                        class={`text-[7px] font-mono font-bold tracking-[0.2em] transition-all duration-300 ${
+                          isEnabled()
+                            ? "text-accent"
+                            : "text-text-disabled opacity-40"
+                        }`}
+                      >
+                        {isEnabled() ? "ON" : "OFF"}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              );
+            }}
+          </For>
         </div>
       </div>
 
@@ -319,12 +413,14 @@ export default function ConfigPanel(props: ConfigPanelProps) {
             <button 
                 class="btn btn-secondary h-8 px-4 text-[10px]" 
                 onClick={() => setDrafts({})}
+                disabled={!!props.savingConfig}
             >
                 DISCARD
             </button>
             <button 
                 class="btn btn-primary h-8 px-6 text-[10px] bg-accent text-black" 
                 onClick={() => saveDrafts()}
+                disabled={!!props.savingConfig}
             >
                 SAVE_CHANGES
             </button>

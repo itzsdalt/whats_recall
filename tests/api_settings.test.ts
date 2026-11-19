@@ -1,5 +1,5 @@
 process.env.NODE_ENV = "test";
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import { expect, test, describe, beforeEach, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -9,6 +9,7 @@ process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 
 import { getDb } from "../src/db/database.ts";
+import { createSettingsRouter } from "../src/api/settings.ts";
 import settingsApi from "../src/api/settings.ts";
 
 describe("API /settings", () => {
@@ -50,5 +51,41 @@ describe("API /settings", () => {
         
         const settings = db.getSettings();
         expect(settings.new_key).toBe("new_value");
+    });
+
+    test("POST /update should apply online privacy and save it", async () => {
+        const updates: Array<[string, string]> = [];
+        const router = createSettingsRouter({
+            updatePrivacySetting: async (key, value) => {
+                updates.push([key, value]);
+            }
+        });
+        const res = await router.request("/update", {
+            method: "POST",
+            body: JSON.stringify({ key: "whatsapp_hide_online", value: "true" }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        expect(res.status).toBe(200);
+        expect(updates).toEqual([["whatsapp_hide_online", "true"]]);
+        expect(db.getSettings().whatsapp_hide_online).toBe("true");
+    });
+
+    test("POST /update should apply read receipt privacy and save it", async () => {
+        const updates: Array<[string, string]> = [];
+        const router = createSettingsRouter({
+            updatePrivacySetting: async (key, value) => {
+                updates.push([key, value]);
+            }
+        });
+        const res = await router.request("/update", {
+            method: "POST",
+            body: JSON.stringify({ key: "whatsapp_hide_read_receipts", value: "true" }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        expect(res.status).toBe(200);
+        expect(updates).toEqual([["whatsapp_hide_read_receipts", "true"]]);
+        expect(db.getSettings().whatsapp_hide_read_receipts).toBe("true");
     });
 });

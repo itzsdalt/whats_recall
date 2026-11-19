@@ -219,6 +219,8 @@ export function getDb(testDbPath?: string, testMediaDir?: string) {
   };
   seed('whatsapp_phone', '');
   seed('whatsapp_notify', 'false');
+  seed('whatsapp_hide_online', 'false');
+  seed('whatsapp_hide_read_receipts', 'false');
   seed('whatsapp_pairing_method', 'code');
   seed('max_media_size', '100'); // 100MB default
 

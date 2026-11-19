@@ -106,6 +106,8 @@ export interface Stats {
 
 
 export interface AppSettings {
+  whatsapp_hide_online?: "true" | "false";
+  whatsapp_hide_read_receipts?: "true" | "false";
   [key: string]: string;
 }
 
