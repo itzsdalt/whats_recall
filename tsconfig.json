@@ -17,6 +17,9 @@
       "node"
     ]
   },
+  "ts-node": {
+    "experimentalResolver": true
+  },
   "include": [
     "src/**/*.ts",
     "tests/**/*.ts"

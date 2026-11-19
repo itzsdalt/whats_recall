@@ -98,10 +98,13 @@ function decryptEditedMessage(
 }
 
 export class MessageProcessor {
-    constructor(
-        private sock: any,
-        private broadcast: BroadcastFn,
-    ) {}
+    private sock: any;
+    private broadcast: BroadcastFn;
+
+    constructor(sock: any, broadcast: BroadcastFn) {
+        this.sock = sock;
+        this.broadcast = broadcast;
+    }
 
     /**
      * Verifies if a chat is being monitored. Checks both Phone Number (PN)
