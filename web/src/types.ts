@@ -57,6 +57,8 @@ export interface Message {
   media_type: string | null;
   media_filename: string | null;
   media_path: string | null;
+  view_once_data?: string;
+  view_once_mime?: string;
   timestamp: number;
   is_from_me: boolean | number;
   is_deleted: boolean | number;

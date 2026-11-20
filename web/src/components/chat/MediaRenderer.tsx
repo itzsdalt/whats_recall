@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Show, createSignal, onCleanup } from "solid-js";
 import { Message } from "../../types";
 import { mediaUrl } from "../../utils";
 import { DownloadIcon, FileIcon, GalleryBrokenIcon } from "../Icons";
@@ -9,6 +9,95 @@ interface MediaRendererProps {
   msg: Message;
   isMe: boolean;
   onImageClick: (src: string) => void;
+  onViewOnceConsumed: (messageId: string) => void;
+}
+
+function ViewOnceMedia(props: {
+  msg: Message;
+  onConsumed: (messageId: string) => void;
+}) {
+  const [source, setSource] = createSignal<string | null>(null);
+  const [consumed, setConsumed] = createSignal(false);
+
+  function discard() {
+    const url = source();
+    if (url) URL.revokeObjectURL(url);
+    setSource(null);
+  }
+
+  function reveal() {
+    const encoded = props.msg.view_once_data;
+    if (!encoded || consumed()) return;
+
+    try {
+      const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+      // View Once bytes stay in this component's memory only; never persist or expose download controls.
+      const blob = new Blob([bytes], {
+        type: props.msg.view_once_mime || "application/octet-stream",
+      });
+      setSource(URL.createObjectURL(blob));
+      setConsumed(true);
+      props.onConsumed(props.msg.message_id);
+    } catch {
+      setConsumed(true);
+      props.onConsumed(props.msg.message_id);
+    }
+  }
+
+  onCleanup(discard);
+
+  return (
+    <div class="my-1">
+      <Show
+        when={source()}
+        fallback={
+          <Show
+            when={props.msg.view_once_data && !consumed()}
+            fallback={
+              <Show when={consumed()}>
+                <span class="text-metadata uppercase">VIEW_ONCE_CONSUMED</span>
+              </Show>
+            }
+          >
+            <button class="tag tag-accent" onClick={reveal}>
+              VIEW_ONCE
+            </button>
+          </Show>
+        }
+      >
+        {(src) => (
+          <div class="relative max-w-80 rounded-lg overflow-hidden border border-border-visible bg-black">
+            <Show
+              when={(props.msg.view_once_mime || "").startsWith("video/")}
+              fallback={
+                <img
+                  src={src()}
+                  alt="View Once media"
+                  class="max-h-100 max-w-full object-contain"
+                  onContextMenu={(event) => event.preventDefault()}
+                />
+              }
+            >
+              <video
+                src={src()}
+                controls
+                autoplay
+                preload="metadata"
+                controlslist="nodownload"
+                disablepictureinpicture
+                class="w-full max-h-100"
+                onEnded={discard}
+                onContextMenu={(event) => event.preventDefault()}
+              />
+            </Show>
+            <button class="tag absolute top-2 right-2 bg-black" onClick={discard}>
+              CLOSE
+            </button>
+          </div>
+        )}
+      </Show>
+    </div>
+  );
 }
 
 export function MediaRenderer(props: MediaRendererProps) {
@@ -18,14 +107,15 @@ export function MediaRenderer(props: MediaRendererProps) {
   const mt = () => (m().media_type || "").toLowerCase();
 
   return (
-    <Show when={src()} fallback={
+    <Show when={m().is_view_once} fallback={
+      <Show when={src()} fallback={
       <Show when={type() !== "chat"}>
         <div class="flex items-center gap-3 p-3 bg-surface-raised border border-border rounded-lg text-[10px] font-mono font-bold text-text-disabled uppercase tracking-widest my-1 min-w-50">
           <GalleryBrokenIcon size={18} class="text-accent/30" />
           {`[ ${type().toUpperCase().replace("MESSAGE", "")} ]`}
         </div>
       </Show>
-    }>
+      }>
       {(s) => (
         <Show when={type() === "ptv"} fallback={
           <Show when={type() === "image" || type().includes("sticker") || mt().startsWith("image/")} fallback={
@@ -75,6 +165,12 @@ export function MediaRenderer(props: MediaRendererProps) {
           <VideoNotePlayer src={s()} />
         </Show>
       )}
+      </Show>
+    }>
+      <ViewOnceMedia
+        msg={m()}
+        onConsumed={props.onViewOnceConsumed}
+      />
     </Show>
   );
 }

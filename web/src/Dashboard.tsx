@@ -4,7 +4,9 @@ import Sidebar from "./Sidebar";
 import ChatView from "./ChatView";
 import Settings from "./Settings";
 
-export default function Dashboard() {
+export default function Dashboard(props: {
+  onViewOnceConsumed: (messageId: string) => void;
+}) {
   return (
     <div class="grid grid-cols-[340px_1fr] h-dvh relative z-1 p-3 gap-3 bg-bg max-md:flex max-md:flex-col max-md:p-0 max-md:gap-0">
       <Sidebar />
@@ -16,7 +18,7 @@ export default function Dashboard() {
           <Settings />
         </Show>
         <Show when={view() === "chats"}>
-          <ChatView />
+          <ChatView onViewOnceConsumed={props.onViewOnceConsumed} />
         </Show>
       </main>
     </div>

@@ -90,7 +90,7 @@ export class WhatsAppConnection {
                 logger: pino({ level: "silent" }) as any,
                 syncFullHistory: true,
                 generateHighQualityLinkPreview: true,
-                browser: ["Ubuntu", "Chrome", "20.0.0"],
+                browser: ["Android", "Chrome", "14.0.0"],
             });
 
             this.processor = new MessageProcessor(this.sock, this.broadcast);

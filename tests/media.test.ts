@@ -1,6 +1,6 @@
 process.env.NODE_ENV = "test";
 import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -9,10 +9,13 @@ process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 process.env.MEDIA_DIR = join(tempDir, "media");
 
-// Mocking Baileys
-vi.mock("@whiskeysockets/baileys", () => ({
-    downloadMediaMessage: async () => Buffer.from("fake media content"),
+const { downloadMediaMock } = vi.hoisted(() => ({
+    downloadMediaMock: vi.fn(async () => Buffer.from("fake media content")),
 }));
+vi.mock("@whiskeysockets/baileys", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@whiskeysockets/baileys")>();
+    return { ...actual, downloadMediaMessage: downloadMediaMock };
+});
 
 // Mocking fetch for profile pic
 // Use any to avoid missing fetch properties like 'preconnect' in Bun types
@@ -26,7 +29,7 @@ vi.mock("@whiskeysockets/baileys", () => ({
 };
 
 import { getDb } from "../src/db/database.ts";
-import { downloadMedia, downloadProfilePic } from "../src/whatsapp/media.ts";
+import { downloadMedia, downloadProfilePic, downloadViewOnceMedia } from "../src/whatsapp/media.ts";
 
 describe("Media Utils", () => {
     let db: any;
@@ -40,6 +43,7 @@ describe("Media Utils", () => {
 
     beforeEach(async () => {
         await db.clearAllData();
+        downloadMediaMock.mockClear();
         // Ensure media dir exists after clearAllData
         if (!existsSync(process.env.MEDIA_DIR!)) {
             mkdirSync(process.env.MEDIA_DIR!, { recursive: true });
@@ -84,6 +88,9 @@ describe("Media Utils", () => {
         const message = {
             message: {
                 imageMessage: {
+                    directPath: "/media/image",
+                    mediaKey: Buffer.alloc(32, 1),
+                    fileLength: 10,
                     fileSha256: Buffer.from("fake-sha256")
                 }
             }
@@ -96,28 +103,56 @@ describe("Media Utils", () => {
         expect(existsSync(join(process.env.MEDIA_DIR!, result?.path!))).toBe(true);
     });
 
-    test("downloadMedia should handle viewOnceMessage and put in videos/", async () => {
+    test("downloadMedia must not persist View Once media", async () => {
         const message = {
             message: {
                 viewOnceMessage: {
                     message: {
                         videoMessage: {
+                            directPath: "/media/video",
+                            mediaKey: Buffer.alloc(32, 2),
+                            fileLength: 10,
                             fileSha256: Buffer.from("video-sha256")
                         }
                     }
                 }
             }
         };
-        
+
+        const filesBefore = readdirSync(process.env.MEDIA_DIR!);
         const result = await downloadMedia(message as any, "video");
-        expect(result).not.toBeNull();
-        expect(result?.sha256hex).toBe(Buffer.from("video-sha256").toString('hex'));
-        expect(result?.path).toMatch(/^videos\//);
+        expect(result).toBeNull();
+        expect(downloadMediaMock).not.toHaveBeenCalled();
+        expect(readdirSync(process.env.MEDIA_DIR!)).toEqual(filesBefore);
+    });
+
+    test("downloadViewOnceMedia keeps delivered bytes in memory and unwraps associated children", async () => {
+        const filesBefore = readdirSync(process.env.MEDIA_DIR!);
+        const result = await downloadViewOnceMedia({
+            message: {
+                associatedChildMessage: {
+                    message: {
+                        imageMessage: {
+                            directPath: "/media/once",
+                            mediaKey: Buffer.alloc(32, 3),
+                            fileLength: 10,
+                            mimetype: "image/jpeg",
+                        },
+                    },
+                },
+            },
+        } as any, "image");
+
+        expect(result?.buffer).toEqual(Buffer.from("fake media content"));
+        expect(result?.mimeType).toBe("image/jpeg");
+        expect(downloadMediaMock).toHaveBeenCalledOnce();
+        expect(readdirSync(process.env.MEDIA_DIR!)).toEqual(filesBefore);
     });
 
     test("downloadMedia should return null if no media found", async () => {
         const message = { message: { conversation: "hello" } };
         const result = await downloadMedia(message as any, "image");
         expect(result).toBeNull();
+        expect(downloadMediaMock).not.toHaveBeenCalled();
     });
 });

@@ -1,6 +1,6 @@
 process.env.NODE_ENV = "test";
 import { expect, test, describe, beforeEach } from "vitest";
-import { extractJidId, getChatName, safeMerge, getChatNameAsync } from "../src/whatsapp/utils.ts";
+import { extractJidId, getChatName, safeMerge, getChatNameAsync, normalizeMessage, normalizeIncomingContent } from "../src/whatsapp/utils.ts";
 import { syncService } from "../src/whatsapp/sync.ts";
 
 describe("WhatsApp Utils", () => {
@@ -9,6 +9,33 @@ describe("WhatsApp Utils", () => {
     syncService.chats.clear();
     syncService.lidToPn.clear();
     syncService.pnToLid.clear();
+  });
+
+  describe("message normalization", () => {
+    test("recognizes view-once content after nested normalization", () => {
+      const normalized = normalizeMessage({
+        viewOnceMessageV2: {
+          message: {
+            ephemeralMessage: {
+              message: { imageMessage: { mimetype: "image/jpeg" } },
+            },
+          },
+        },
+      } as any);
+
+      expect(normalized.isViewOnce).toBe(true);
+      expect(normalized.type).toBe("imageMessage");
+    });
+
+    test("unwraps associated child messages for media normalization", () => {
+      const content = normalizeIncomingContent({
+        associatedChildMessage: {
+          message: { videoMessage: { mimetype: "video/mp4" } },
+        },
+      } as any);
+
+      expect(content).toHaveProperty("videoMessage");
+    });
   });
   describe("getChatNameAsync", () => {
     test("should return immediate name if available", async () => {

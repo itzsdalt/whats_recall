@@ -24,7 +24,9 @@ import ChatHeader from "./components/chat/ChatHeader";
 import MessageList, { formatDateForTimestamp } from "./components/chat/MessageList";
 import MediaGallery from "./components/chat/MediaGallery";
 
-export default function ChatView() {
+export default function ChatView(props: {
+  onViewOnceConsumed: (messageId: string) => void;
+}) {
   const [lightboxSrc, setLightboxSrc] = createSignal<string | null>(null);
   const [viewMode, setViewMode] = createSignal<"messages" | "media">("messages");
   const [showScrollBottom, setShowScrollBottom] = createSignal(false);
@@ -307,6 +309,7 @@ export default function ChatView() {
                   messages={displayMessages()}
                   isGroup={!!chat()?.is_group}
                   onImageClick={setLightboxSrc}
+                  onViewOnceConsumed={props.onViewOnceConsumed}
                   onQuoteClick={scrollToMessage}
                   findMessage={findMessageByStanzaId}
                   highlightQuery={searchQuery()}

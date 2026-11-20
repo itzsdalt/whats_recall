@@ -5,11 +5,15 @@ import {
     isJidGroup,
     proto,
 } from "@whiskeysockets/baileys";
-import { aesDecryptGCM, hkdf, hmacSign } from "@whiskeysockets/baileys/lib/Utils/crypto.js";
+import { aesDecryptGCM, hmacSign } from "@whiskeysockets/baileys/lib/Utils/crypto.js";
 import { log } from "../logger.ts";
 import { getDb, getMediaDir } from "../db/database.ts";
 import { syncService } from "./sync.ts";
-import { downloadMedia, downloadProfilePic } from "./media.ts";
+import {
+    downloadMedia,
+    downloadProfilePic,
+    downloadViewOnceMedia,
+} from "./media.ts";
 import { join } from "path";
 import { existsSync } from "fs";
 import type { BroadcastFn, WhatsAppMessage } from "../types.ts";
@@ -355,6 +359,16 @@ export class MessageProcessor {
     public async handleMessage(msg: WAMessage) {
         const rawChatId = msg.key?.remoteJid;
         if (!rawChatId || rawChatId === "status@broadcast") return;
+        if (
+            msg.messageStubParameters?.some(
+                (parameter) =>
+                    typeof parameter === "string" &&
+                    parameter.includes("Message absent from node"),
+            )
+        ) {
+            log("PROCESSOR", "Ignoring unavailable message stub");
+            return;
+        }
 
         // Normalize to Phone Number for single unified chat view
         const chatId = await syncService.resolvePN(rawChatId, this.sock);
@@ -416,7 +430,8 @@ export class MessageProcessor {
             return;
         }
 
-        const mType = getContentType(msg.message) || "stub";
+        const normalized = normalizeMessage(msg.message);
+        const mType = normalized.type || getContentType(msg.message) || "stub";
 
         // Automatically track and save metadata for any newly encountered chats
         if (!syncService.chats.has(chatId) && chatId) {
@@ -428,7 +443,6 @@ export class MessageProcessor {
 
         log("PROCESSOR", `[${mType}] ${chatId}`);
 
-        const normalized = normalizeMessage(msg.message);
         const isViewOnce = normalized.isViewOnce;
         const messageType = normalized.type || "stub";
         const content =
@@ -469,11 +483,7 @@ export class MessageProcessor {
                         }
 
                         const secret = Buffer.from(oldMsg.message_secret, "base64");
-                        const ownSender = jidNormalizedUser(
-                            msg.key?.addressingMode === "lid" && this.sock.user?.lid
-                                ? this.sock.user.lid
-                                : this.sock.user.id,
-                        );
+                        const ownSender = jidNormalizedUser(this.sock.user.id);
                         const envelopeAuthorRaw = msg.key.fromMe
                             ? ownSender
                             : jidNormalizedUser(
@@ -587,8 +597,6 @@ export class MessageProcessor {
         let quotedStanzaId: string | null = null;
         let quotedSender: string | null = null;
         let quotedPreview: string | null = null;
-        let quotedViewOnceMedia: any = null;
-
         if (contextInfo && contextInfo.quotedMessage) {
             quotedStanzaId = contextInfo.stanzaId || null;
             const rawQuotedSender = contextInfo.participant || null;
@@ -632,51 +640,6 @@ export class MessageProcessor {
                     "👁️ View Once " +
                     (preview.startsWith("👁️") ? preview.slice(2) : preview);
 
-                // Try to download the quoted view-once media
-                const quotedMediaTypes = [
-                    "imageMessage",
-                    "videoMessage",
-                    "audioMessage",
-                    "stickerMessage",
-                    "documentMessage",
-                ];
-                if (
-                    qMsgType &&
-                    quotedMediaTypes.includes(qMsgType) &&
-                    qContent
-                ) {
-                    log("PROCESSOR", "Downloading quoted view-once...");
-                    try {
-                        const fakeMsg = {
-                            message: qMsg,
-                            key: {
-                                remoteJid: chatId,
-                                id: quotedStanzaId,
-                                participant: rawQuotedSender,
-                            },
-                        } as any;
-                        const res = await downloadMedia(
-                            fakeMsg,
-                            qMsgType.replace("Message", ""),
-                            this.sock,
-                        );
-                        if (res) {
-                            quotedViewOnceMedia = {
-                                ...res,
-                                type: qMsgType.replace("Message", ""),
-                            };
-                            log(
-                                "PROCESSOR",
-                                `✅ Quoted view-once: ${quotedViewOnceMedia.path}`,
-                            );
-                        }
-                    } catch (e: any) {
-                        log(
-                            "PROCESSOR",
-                            `❌ Quoted view-once failed: ${e.message}`,
-                        );
-                    }
-                }
             }
 
             quotedPreview = preview ? preview.slice(0, 100) : null;
@@ -696,6 +659,7 @@ export class MessageProcessor {
         };
 
         const hasMediaCandidate = !!mediaTypesMap[messageType];
+        let viewOnceMedia: { buffer: Buffer; mimeType: string } | null = null;
 
         if (hasMediaCandidate) {
             // Map lottieStickerMessage to sticker for downloader compatibility if needed
@@ -703,46 +667,32 @@ export class MessageProcessor {
                 messageType === "lottieStickerMessage"
                     ? "sticker"
                     : messageType.replace("Message", "");
-            const mediaResult = await downloadMedia(
-                msg,
-                downloadType,
-                this.sock,
-            );
-            if (mediaResult) {
-                mediaPath = mediaResult.path;
-                mediaSha256 = mediaResult.sha256hex;
-            }
-        }
-
-        // If replying to a view-once message, save the recovered media to the original message
-        if (quotedViewOnceMedia && quotedStanzaId) {
-            getDb().updateMessageMedia(
-                quotedStanzaId,
-                quotedViewOnceMedia.path,
-                quotedViewOnceMedia.sha256hex,
-                quotedViewOnceMedia.type || "image",
-            );
-
-            // Broadcast the updated view-once message so the frontend reflects the recovered media immediately
-            const updatedMsg =
-                getDb().getMessage(quotedStanzaId) ||
-                getDb().getMessageByOriginalId(quotedStanzaId);
-            if (updatedMsg) {
-                this.broadcast("message_updated", {
-                    message_id: updatedMsg.message_id,
-                    chat_id: chatId,
-                    has_media: 1,
-                    media_path: quotedViewOnceMedia.path,
-                    media_type: quotedViewOnceMedia.type || "image",
-                    type: quotedViewOnceMedia.type || "image",
-                });
+            if (isViewOnce) {
+                viewOnceMedia = await downloadViewOnceMedia(
+                    msg,
+                    downloadType,
+                    this.sock,
+                );
+            } else {
+                const mediaResult = await downloadMedia(
+                    msg,
+                    downloadType,
+                    this.sock,
+                );
+                if (mediaResult) {
+                    mediaPath = mediaResult.path;
+                    mediaSha256 = mediaResult.sha256hex;
+                }
             }
         }
 
         const messageId = msg.key.id!;
         const existingMsg = getDb().getMessage(messageId);
         const rawSecret = normalized.content?.messageContextInfo?.messageSecret;
-        const messageSecret = rawSecret ? Buffer.from(rawSecret).toString("base64") : undefined;
+        const messageSecret =
+            !isViewOnce && rawSecret
+                ? Buffer.from(rawSecret).toString("base64")
+                : undefined;
 
 
         const msgData: WhatsAppMessage = {
@@ -823,14 +773,25 @@ export class MessageProcessor {
                 `💾 ${msgData.type} (view-once) from ${senderName} in ${chatName}`,
             );
 
-        this.broadcast("new_message", {
-            ...msgData,
-            chat_name: chatName,
-            is_group: isGrp ? 1 : 0,
-            profile_pic: getDb().getChatProfilePic(chatId),
-        });
+        try {
+            this.broadcast("new_message", {
+                ...msgData,
+                ...(viewOnceMedia
+                    ? {
+                          has_media: true,
+                          view_once_data: viewOnceMedia.buffer.toString("base64"),
+                          view_once_mime: viewOnceMedia.mimeType,
+                      }
+                    : {}),
+                chat_name: chatName,
+                is_group: isGrp ? 1 : 0,
+                profile_pic: getDb().getChatProfilePic(chatId),
+            });
+        } finally {
+            viewOnceMedia?.buffer.fill(0);
+        }
 
-        // Forward a private notification copy if a View-Once message is detected and notifications are enabled
+        // Send only a text alert for View Once messages; never forward their media.
         const settings = getDb().getSettings();
         if (
             isViewOnce &&
@@ -842,7 +803,7 @@ export class MessageProcessor {
     }
 
     /**
-     * Sends a replica of a View-Once message to the monitored user's own chat.
+     * Sends a text-only alert for a View Once message; media is never forwarded.
      */
     private async sendViewOnceNotification(
         msg: WhatsAppMessage,
@@ -862,28 +823,10 @@ export class MessageProcessor {
 
             const text = `👁️ *VIEW_ONCE* [${source}] @ ${time} [${mType}]`;
 
-            if (msg.has_media && msg.media_path) {
-                const fullPath = join(getMediaDir(), msg.media_path);
-                if (existsSync(fullPath)) {
-                    const content: any = { caption: text };
-                    if (msg.type === "image") content.image = { url: fullPath };
-                    else if (msg.type === "video")
-                        content.video = { url: fullPath };
-                    else
-                        content.document = {
-                            url: fullPath,
-                            fileName: msg.media_filename || "media",
-                        };
-
-                    actionsQueue.enqueue(async () => {
-                        await this.sock.sendMessage(myId, content);
-                        log(
-                            "PROCESSOR",
-                            `📤 View-once notify: ${msg.message_id}`,
-                        );
-                    }, `VIEW_ONCE_NOTIFICATION [${msg.message_id}]`);
-                }
-            }
+            actionsQueue.enqueue(async () => {
+                await this.sock.sendMessage(myId, { text });
+                log("PROCESSOR", `View-once text notification: ${msg.message_id}`);
+            }, `VIEW_ONCE_NOTIFICATION [${msg.message_id}]`);
         } catch (err: any) {
             log("PROCESSOR", `Failed view-once notify: ${err.message}`);
         }

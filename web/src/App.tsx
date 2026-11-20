@@ -93,6 +93,30 @@ export default function App() {
     });
   }
 
+  function consumeViewOnceMedia(messageId: string) {
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.message_id === messageId
+          ? { ...message, view_once_data: undefined }
+          : message,
+      ),
+    );
+    const chatId = currentChatId();
+    if (chatId) {
+      const cached = messageCache.get(chatId);
+      if (cached) {
+        messageCache.set(
+          chatId,
+          cached.map((message) =>
+            message.message_id === messageId
+              ? { ...message, view_once_data: undefined }
+              : message,
+          ),
+        );
+      }
+    }
+  }
+
   function connectWs() {
     createWs((event, data) => {
       if (event === "status") {
@@ -121,6 +145,15 @@ export default function App() {
           reactions: [],
           edits: [],
         };
+        const cachedMessage = normalized.is_view_once
+          ? {
+              ...normalized,
+              has_media: false,
+              media_path: null,
+              media_type: null,
+              view_once_data: undefined,
+            }
+          : normalized;
         const cachedMessages =
           messageCache.get(chatId) ||
           (currentChatId() === chatId ? messages() : []);
@@ -134,7 +167,7 @@ export default function App() {
             ));
         messageCache.set(
           chatId,
-          upsertMessage(cachedMessages, normalized),
+          upsertMessage(cachedMessages, cachedMessage),
         );
 
         setChats((prev) => {
@@ -251,6 +284,7 @@ export default function App() {
                   emoji: r.emoji,
                 });
               }
+
               return { ...m, reactions: existing };
             }),
           );
@@ -358,7 +392,7 @@ export default function App() {
         }
       >
         <Show when={authenticated()} fallback={<Login />}>
-          <Dashboard />
+          <Dashboard onViewOnceConsumed={consumeViewOnceMedia} />
         </Show>
       </Show>
       <Toaster

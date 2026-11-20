@@ -7,6 +7,7 @@ interface MessageListProps {
   messages: Message[];
   isGroup: boolean;
   onImageClick: (_src: string) => void;
+  onViewOnceConsumed: (_messageId: string) => void;
   onQuoteClick: (_messageId: string) => void;
   findMessage: (_stanzaId: string) => Message | undefined;
   highlightQuery?: string;
@@ -105,6 +106,7 @@ export default function MessageList(props: MessageListProps) {
                   msg={group.messages[0]}
                   isGroup={props.isGroup}
                   onImageClick={props.onImageClick}
+                  onViewOnceConsumed={props.onViewOnceConsumed}
                   onQuoteClick={props.onQuoteClick}
                   findMessage={props.findMessage}
                   highlightQuery={props.highlightQuery}

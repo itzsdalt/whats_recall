@@ -5,6 +5,7 @@ import { join, dirname } from 'path';
 import { Worker } from 'node:worker_threads';
 import { getDb, getDataDir } from '../db/database.ts';
 import { log } from '../logger.ts';
+import { normalizeIncomingContent, normalizeMessage } from './utils.ts';
 
 function getMediaDir() {
   return process.env.MEDIA_DIR || join(getDataDir(), 'media');
@@ -74,22 +75,120 @@ function ensureDir(path: string) {
   }
 }
 
+function getMediaContent(message: WAMessage, type: string) {
+  const content = normalizeIncomingContent(message.message);
+  const mediaType = type.endsWith('Message') ? type : `${type}Message`;
+  const media = (content as any)?.[mediaType];
+
+  if (
+    !media ||
+    (!media.url && !media.directPath) ||
+    !media.mediaKey
+  ) {
+    return null;
+  }
+
+  return {
+    content,
+    media,
+    normalizedMessage: { ...message, message: content } as WAMessage,
+  };
+}
+
+async function downloadBuffer(
+  message: WAMessage,
+  type: string,
+  sock?: any,
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const mediaContent = getMediaContent(message, type);
+  if (!mediaContent) {
+    log('MEDIA', `Skipping ${type}: no downloadable media payload`);
+    return null;
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = await downloadMediaMessage(
+      mediaContent.normalizedMessage,
+      'buffer',
+      {},
+      {
+        logger: { level: 'silent' } as any,
+        reuploadRequest: sock?.updateMediaMessage,
+      },
+    ) as Buffer;
+  } catch (error) {
+    log('MEDIA', `Standard direct download failed for ${type}; trying fallback`);
+    const bType = (type === 'lottieSticker' ? 'sticker' : (type === 'ptv' ? 'video' : type)) as any;
+    const stream = await downloadContentFromMessage(mediaContent.media, bType);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    buffer = Buffer.concat(chunks);
+    if (!buffer.length) throw error;
+  }
+
+  if (!buffer.length) return null;
+  return {
+    buffer,
+    mimeType: mediaContent.media.mimetype || 'application/octet-stream',
+  };
+}
+
+/** Downloads delivered View Once content to memory only; callers must not persist it. */
+export async function downloadViewOnceMedia(
+  message: WAMessage,
+  type: string,
+  sock?: any,
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const maxMb = Number.parseInt(getDb().getSettings().max_media_size || '100', 10);
+  const maxBytes = maxMb * 1024 * 1024;
+  const mediaContent = getMediaContent(message, type);
+  if (!mediaContent) {
+    log('MEDIA', `Skipping View Once ${type}: no downloadable media payload`);
+    return null;
+  }
+
+  const fileLength = Number.parseInt(mediaContent.media.fileLength || '0', 10);
+  if (fileLength > maxBytes) {
+    log('MEDIA', `Skipping oversized View Once ${type}`);
+    return null;
+  }
+
+  let downloaded: { buffer: Buffer; mimeType: string } | null;
+  try {
+    downloaded = await downloadBuffer(message, type, sock);
+  } catch (error) {
+    log(
+      'MEDIA',
+      `Failed to download View Once ${type}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+  if (!downloaded) return null;
+  if (downloaded.buffer.length > maxBytes) {
+    log('MEDIA', `Skipping oversized View Once ${type}`);
+    downloaded.buffer.fill(0);
+    return null;
+  }
+  return downloaded;
+}
+
 export async function downloadMedia(message: WAMessage, type: string, sock?: any): Promise<{ path: string, sha256hex: string | null } | null> {
+  if ((message.key as any)?.isViewOnce || normalizeMessage(message.message).isViewOnce) {
+    log('MEDIA', 'Skipping persistent download of View Once media');
+    return null;
+  }
   const db = getDb();
   const settings = db.getSettings();
   const maxMb = parseInt(settings.max_media_size || '100');
   const MAX_MEDIA_SIZE = maxMb * 1024 * 1024;
   try {
-    const mType = type.endsWith('Message') ? type : type + 'Message';
-    const msg = message.message as any;
-    const mediaObj = msg?.[mType] || 
-                    msg?.ephemeralMessage?.message?.[mType] || 
-                    msg?.viewOnceMessage?.message?.[mType] || 
-                    msg?.viewOnceMessageV2?.message?.[mType] || 
-                    msg?.viewOnceMessageV2Extension?.message?.[mType] ||
-                    msg?.documentWithCaptionMessage?.message?.[mType];
-    
-    if (!mediaObj) return null;
+    const mediaContent = getMediaContent(message, type);
+    if (!mediaContent) {
+      log('MEDIA', `Skipping ${type}: no downloadable media payload`);
+      return null;
+    }
+    const { media: mediaObj } = mediaContent;
 
     // Check media size before download if fileLength is present
     const fileLength = parseInt(mediaObj.fileLength || '0');
@@ -113,31 +212,9 @@ export async function downloadMedia(message: WAMessage, type: string, sock?: any
       log('MEDIA', `Deduplication suggested for ${sha256hex.slice(0, 8)} but no valid file found. Proceeding to download...`);
     }
 
-    let buffer: Buffer;
-    try {
-      buffer = await downloadMediaMessage(
-        message,
-        'buffer',
-        {},
-        { 
-          logger: { level: 'silent' } as any,
-          reuploadRequest: sock?.updateMediaMessage
-        }
-      ) as Buffer;
-    } catch (_err) {
-      log('MEDIA', `Standard direct download failed for ${type}, attempting manual fallback...`);
-      // Manual fallback using low-level content downloader for types like lottieSticker
-      const bType = (type === 'lottieSticker' ? 'sticker' : (type === 'ptv' ? 'video' : type)) as any;
-      const stream = await downloadContentFromMessage(mediaObj, bType);
-      
-      const chunks = [];
-      for await (const chunk of stream) {
-        chunks.push(chunk);
-      }
-      buffer = Buffer.concat(chunks);
-    }
-
-    if (!buffer || buffer.length === 0) return null;
+    const downloaded = await downloadBuffer(message, type, sock);
+    if (!downloaded) return null;
+    const { buffer } = downloaded;
 
     // Verify SHA256 if not provided in message (offloaded to worker)
     if (!sha256hex) {

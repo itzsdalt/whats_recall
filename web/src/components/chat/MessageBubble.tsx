@@ -19,6 +19,7 @@ interface MessageBubbleProps {
   msg: Message;
   isGroup: boolean;
   onImageClick: (_src: string) => void;
+  onViewOnceConsumed: (_messageId: string) => void;
   onQuoteClick: (_messageId: string) => void;
   findMessage: (_stanzaId: string) => Message | undefined;
   highlightQuery?: string;
@@ -132,7 +133,12 @@ export function MessageBubble(props: MessageBubbleProps) {
         </div>
       </Show>
 
-      <MediaRenderer msg={m()} isMe={isMe()} onImageClick={props.onImageClick} />
+      <MediaRenderer
+        msg={m()}
+        isMe={isMe()}
+        onImageClick={props.onImageClick}
+        onViewOnceConsumed={props.onViewOnceConsumed}
+      />
 
       <Show when={m().body}>
         <div class="text-body-sm text-text-primary whitespace-pre-wrap leading-relaxed">

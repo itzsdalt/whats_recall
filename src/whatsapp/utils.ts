@@ -1,4 +1,4 @@
-import { isJidGroup, extractMessageContent, getContentType } from '@whiskeysockets/baileys';
+import { isJidGroup, getContentType, normalizeMessageContent as baileysNormalizeMessageContent } from '@whiskeysockets/baileys';
 import { extractJidId } from '../shared/jid.ts';
 import type { proto } from '@whiskeysockets/baileys';
 import { log } from '../logger.ts';
@@ -12,7 +12,15 @@ export function normalizeMessage(message: proto.IMessage | null | undefined): { 
   if (!message) return { content: null, isViewOnce: false, type: null, contextInfo: null };
 
   let tempMsg: any = message;
-  const wrappers = ['ephemeralMessage', 'documentWithCaptionMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'];
+  const wrappers = [
+    'ephemeralMessage',
+    'documentWithCaptionMessage',
+    'viewOnceMessage',
+    'viewOnceMessageV2',
+    'viewOnceMessageV2Extension',
+    'editedMessage',
+    'associatedChildMessage',
+  ];
   let isViewOnce = false;
 
   const rawKeys = Object.keys(tempMsg);
@@ -24,12 +32,15 @@ export function normalizeMessage(message: proto.IMessage | null | undefined): { 
     }
   }
 
-  let messageType = getContentType(tempMsg);
-  while (messageType && wrappers.includes(messageType)) {
-    if (messageType.includes('viewOnce')) isViewOnce = true;
-    tempMsg = extractMessageContent(tempMsg);
-    messageType = getContentType(tempMsg);
+  for (let depth = 0; depth < 10; depth++) {
+    const wrapper = wrappers.find((key) => tempMsg?.[key]?.message);
+    if (!wrapper) break;
+    if (wrapper.includes('viewOnce')) isViewOnce = true;
+    tempMsg = tempMsg[wrapper].message;
   }
+
+  tempMsg = baileysNormalizeMessageContent(tempMsg) || null;
+  const messageType = getContentType(tempMsg);
 
   if (tempMsg && messageType && tempMsg[messageType]?.viewOnce) {
     isViewOnce = true;
@@ -38,6 +49,25 @@ export function normalizeMessage(message: proto.IMessage | null | undefined): { 
   const contextInfo = tempMsg && messageType ? (tempMsg[messageType]?.contextInfo || tempMsg.contextInfo) : null;
 
   return { content: tempMsg, isViewOnce, type: messageType || null, contextInfo };
+}
+
+export function normalizeIncomingContent(message: proto.IMessage | null | undefined): proto.IMessage | null {
+  if (!message) return null;
+  let content: any = message;
+  for (let depth = 0; depth < 10; depth++) {
+    const wrapper = [
+      'ephemeralMessage',
+      'documentWithCaptionMessage',
+      'viewOnceMessage',
+      'viewOnceMessageV2',
+      'viewOnceMessageV2Extension',
+      'editedMessage',
+      'associatedChildMessage',
+    ].find((key) => content?.[key]?.message);
+    if (!wrapper) break;
+    content = content[wrapper].message;
+  }
+  return baileysNormalizeMessageContent(content) || null;
 }
 
 /**

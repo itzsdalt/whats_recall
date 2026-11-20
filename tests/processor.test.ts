@@ -9,6 +9,13 @@ process.env.DATA_DIR = tempDir;
 process.env.DB_PATH = join(tempDir, "messages.db");
 
 import { proto } from "@whiskeysockets/baileys";
+const { downloadMediaMock } = vi.hoisted(() => ({
+    downloadMediaMock: vi.fn(async () => Buffer.from("view-once-image")),
+}));
+vi.mock("@whiskeysockets/baileys", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@whiskeysockets/baileys")>();
+    return { ...actual, downloadMediaMessage: downloadMediaMock };
+});
 vi.mock("@whiskeysockets/baileys/lib/Utils/crypto.js", () => {
   return {
     aesDecryptGCM: (encPayload: Uint8Array) => {
@@ -52,6 +59,7 @@ describe("MessageProcessor", () => {
         };
         mockBroadcast = vi.fn(() => {});
         processor = new MessageProcessor(mockSock, mockBroadcast);
+        downloadMediaMock.mockClear();
         
         // Mock syncService.getRelatedJids
         vi.spyOn(syncService, 'getRelatedJids').mockImplementation(async (jid: unknown) => [String(jid)]);
@@ -81,6 +89,54 @@ describe("MessageProcessor", () => {
         expect(saved).toBeDefined();
         expect(saved.body).toBe("Hello");
         expect(saved.chat_id).toBe("12345@s.whatsapp.net");
+    });
+
+    test("should ignore unavailable message stubs without throwing", async () => {
+        await expect(processor.handleMessage({
+            key: { remoteJid: "12345@s.whatsapp.net", id: "stub", fromMe: false },
+            messageStubParameters: ["Message absent from node"],
+        } as any)).resolves.toBeUndefined();
+        expect(db.getMessage("stub")).toBeNull();
+    });
+
+    test("displays delivered View Once media in memory without persisting it", async () => {
+        db.raw.query("INSERT INTO monitored_chats (chat_id) VALUES (?)").run("12345@s.whatsapp.net");
+        const mediaKey = Buffer.alloc(32, 1);
+        const message = {
+            key: { remoteJid: "12345@s.whatsapp.net", id: "view-once", fromMe: false },
+            message: {
+                viewOnceMessageV2: {
+                    message: {
+                        imageMessage: {
+                            url: "https://media.example/image",
+                            directPath: "/media/image",
+                            mediaKey,
+                            fileLength: 16,
+                            mimetype: "image/jpeg",
+                        },
+                    },
+                },
+            },
+            messageTimestamp: Math.floor(Date.now() / 1000),
+            pushName: "User 1",
+        };
+
+        await processor.handleMessage(message as any);
+
+        expect(downloadMediaMock).toHaveBeenCalledOnce();
+        const saved = db.getMessage("view-once");
+        expect(saved.is_view_once).toBe(1);
+        expect(saved.has_media).toBe(0);
+        expect(saved.media_path).toBeNull();
+        expect(mockBroadcast).toHaveBeenCalledWith(
+            "new_message",
+            expect.objectContaining({
+                message_id: "view-once",
+                has_media: true,
+                view_once_data: Buffer.from("view-once-image").toString("base64"),
+                view_once_mime: "image/jpeg",
+            }),
+        );
     });
 
     test("should handle message deletion (revoke)", async () => {
